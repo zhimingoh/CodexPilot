@@ -559,6 +559,31 @@
     window.location.href = safeCodexHomeUrl();
   }
 
+  function waitForCurrentSessionToChange(deletedSessionId, attempt = 0) {
+    const routeSessionId = sessionRefFromUrl()?.session_id || "";
+    const href = String(window.location.href || "");
+    if (!deletedSessionId || (routeSessionId !== deletedSessionId && !href.includes(deletedSessionId))) {
+      return Promise.resolve(true);
+    }
+    if (attempt >= 12) {
+      return Promise.resolve(false);
+    }
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        waitForCurrentSessionToChange(deletedSessionId, attempt + 1).then(resolve);
+      }, 80 + attempt * 40);
+    });
+  }
+
+  async function leaveCurrentSessionBeforeDelete(session) {
+    const deletedSessionId = String(session?.session_id || "").trim();
+    if (!deletedSessionId || !isCurrentSession(session)) {
+      return true;
+    }
+    leaveDeletedCurrentSession(deletedSessionId);
+    return waitForCurrentSessionToChange(deletedSessionId);
+  }
+
   function stopRowActionEvent(event) {
     event.preventDefault();
     event.stopPropagation();
@@ -639,6 +664,13 @@
     if (deletingCurrentSession && !window.confirm("你正在删除当前打开的会话。删除后会自动切换到其他会话或返回 Codex 首页，确认继续？")) {
       return false;
     }
+    if (deletingCurrentSession) {
+      const leftCurrentSession = await leaveCurrentSessionBeforeDelete(session);
+      if (!leftCurrentSession) {
+        notify("删除失败：请先切换到其他对话或 Codex 首页后再删除当前会话", null);
+        return false;
+      }
+    }
     const response = await window.__CODEX_PILOT__.deleteSession(sessionPayload(session));
     const result = response.result || response;
     if (response.status !== "ok" || result.status === "failed" || result.status === "not_found") {
@@ -651,9 +683,6 @@
       container?.remove();
     } else {
       syncDeletedSessionRow(session);
-    }
-    if (deletingCurrentSession) {
-      leaveDeletedCurrentSession(session.session_id);
     }
     notify(result.message || "已删除会话", lastUndoToken);
     return true;
@@ -812,21 +841,21 @@
       const currentEntry = resolved.find(({ session }) => isCurrentSession(session));
       if (currentEntry && !window.confirm("删除列表包含当前打开的会话。删除后会自动切换到其他会话或返回 Codex 首页，确认继续？")) return;
       let deleted = 0;
-      let deletedCurrentSessionId = "";
       for (const { row, session } of resolved) {
         const deletingCurrentSession = isCurrentSession(session);
+        if (deletingCurrentSession) {
+          const leftCurrentSession = await leaveCurrentSessionBeforeDelete(session);
+          if (!leftCurrentSession) {
+            showToast("删除失败：请先切换到其他对话或 Codex 首页后再删除当前会话", null);
+            continue;
+          }
+        }
         const response = await window.__CODEX_PILOT__.deleteSession(sessionPayload(session));
         const result = response.result || response;
         if (response.status === "ok" && result.status !== "failed" && result.status !== "not_found") {
           row.remove();
           deleted += 1;
-          if (deletingCurrentSession) {
-            deletedCurrentSessionId = session.session_id;
-          }
         }
-      }
-      if (deletedCurrentSessionId) {
-        leaveDeletedCurrentSession(deletedCurrentSessionId);
       }
       showToast(`已删除 ${deleted} 个归档会话`, null);
     }, true);

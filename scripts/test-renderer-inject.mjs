@@ -249,10 +249,12 @@ function createFixture({ includeOther = true, messages } = {}) {
   document.body.append(...[selected.listItem, other?.listItem, ...threadMessages].filter(Boolean));
 
   const bridgeCalls = [];
+  const navigationStateByCall = [];
   const confirmMessages = [];
   const intervals = [];
   const storage = new Map();
   const mutationObservers = [];
+  const navigationClicks = [];
   class FixtureMutationObserver {
     constructor(callback) {
       this.callback = callback;
@@ -309,6 +311,7 @@ function createFixture({ includeOther = true, messages } = {}) {
       },
       __codexPilotBridge(path, payload) {
         bridgeCalls.push({ path, payload });
+        navigationStateByCall.push({ path, navigationClicks: [...navigationClicks] });
         if (path === "/session/export-markdown") {
           return Promise.resolve({
             status: "ok",
@@ -342,11 +345,25 @@ function createFixture({ includeOther = true, messages } = {}) {
       }
     }
   };
+  selected.row.addEventListener("click", () => {
+    selected.row.setAttribute("aria-current", "page");
+    if (other?.row) other.row.attributes.delete("aria-current");
+    context.window.location.href = `https://chatgpt.com/codex/${selected.row.getAttribute("data-app-action-sidebar-thread-id")}`;
+    navigationClicks.push(selected.row.getAttribute("data-app-action-sidebar-thread-id"));
+  });
+  if (other?.row) {
+    other.row.addEventListener("click", () => {
+      other.row.setAttribute("aria-current", "page");
+      selected.row.attributes.delete("aria-current");
+      context.window.location.href = `https://chatgpt.com/codex/${other.row.getAttribute("data-app-action-sidebar-thread-id")}`;
+      navigationClicks.push(other.row.getAttribute("data-app-action-sidebar-thread-id"));
+    });
+  }
   context.window.window = context.window;
   context.window.document = document;
   context.window.history = context.history;
   vm.runInNewContext(source, context, { filename: "renderer-inject.js" });
-  return { bridgeCalls, confirmMessages, context, document, intervals, messages: threadMessages, mutationObservers, other, selected };
+  return { bridgeCalls, confirmMessages, context, document, intervals, messages: threadMessages, mutationObservers, navigationClicks, navigationStateByCall, other, selected };
 }
 
 async function deleteSelected(fixture) {
@@ -427,6 +444,8 @@ async function flushAsyncWork() {
     "你正在删除当前打开的会话。删除后会自动切换到其他会话或返回 Codex 首页，确认继续？"
   ]);
   const deleteCall = bridgeCalls.find((call) => call.path === "/session/delete");
+  const deleteNavigation = fixture.navigationStateByCall.find((call) => call.path === "/session/delete");
+  assert.deepEqual(deleteNavigation.navigationClicks, ["thread-other-12345"], "删除当前会话前应先切换到其他会话");
   assert.equal(JSON.stringify(deleteCall), JSON.stringify({
     path: "/session/delete",
     payload: {
