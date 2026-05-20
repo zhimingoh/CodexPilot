@@ -168,7 +168,7 @@ experimental_bearer_token = "sk-..."
 
 ### Provider Sync
 
-切换 provider 后，历史会话可能因为 `model_provider` 不一致而不可见或分组异常。CodexPilot 在保存混合中转后，以及启动 Codex 前，会自动同步本地会话元数据。
+切换 provider 后，历史会话可能因为 `model_provider` 不一致而不可见或分组异常。CodexPilot 不再自动改写历史会话归属；如需整理历史数据，可在管理器“对话维护”页使用“对话归属同步”，先预览影响范围，再手动同步到选定 Provider。
 
 同步范围：
 
