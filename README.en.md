@@ -164,7 +164,7 @@ If CodexPilot does not detect a ChatGPT login state in `~/.codex/auth.json`, it 
 
 ### Provider Sync
 
-After provider changes, old sessions may be hidden or grouped incorrectly because their `model_provider` metadata differs. CodexPilot automatically syncs local session metadata after saving Hybrid Relay and before launching Codex.
+After provider changes, old sessions may be hidden or grouped incorrectly because their `model_provider` metadata differs. CodexPilot no longer rewrites historical session ownership automatically. To maintain historical data, open Dialog Maintenance, use Dialog Ownership Sync, preview the impact, then manually sync to the selected provider.
 
 Sync scope:
 
