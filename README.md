@@ -5,7 +5,7 @@
 <h1 align="center">CodexPilot</h1>
 
 <p align="center">
-  Codex 的本地启动、对话维护与模型通道管理器。
+  让 Codex 的本地工作流更顺手、更可控。
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
   <a href="Cargo.toml"><img alt="Rust workspace" src="https://img.shields.io/badge/Rust-workspace-b7410e" /></a>
 </p>
 
-CodexPilot 通过本机管理界面启动和注入 Codex，让会话导出、回收站、Provider 归属同步、混合中转和诊断都变得可控。它不修改 Codex App 安装目录。
+CodexPilot 适合已经在本机使用 Codex App 的用户。它提供一个本地管理界面，用 Chromium DevTools Protocol 连接正在运行的 Codex 页面。你可以从这里启动 Codex、导出会话、处理回收站、同步 Provider 归属、配置混合中转和查看诊断日志；它不修改 Codex App 安装目录，也不替换 Codex 本身。
 
 > CodexPilot 是非官方工具，不隶属于 OpenAI 或 Codex App。
 
@@ -28,48 +28,41 @@ CodexPilot 通过本机管理界面启动和注入 Codex，让会话导出、回
 
 ## 快速使用
 
-1. 从 [GitHub Releases](https://github.com/hl9565/CodexPilot/releases) 下载安装包。
-2. 打开 CodexPilot 管理器。
-3. 进入“启动”，确认 Codex 路径和端口状态。
-4. 点击“启动”或“重新注入”，从 CodexPilot 打开 Codex。
-5. 如需自定义模型通道，进入“模型通道”配置混合中转；如需整理历史会话，进入“对话维护”操作。
+1. 打开 [GitHub Releases](https://github.com/hl9565/CodexPilot/releases)，在 Assets 区下载对应平台安装包，不要下载 Source code 压缩包。
+   - Windows：下载 `CodexPilot-*-windows-x64-setup.exe`，运行安装程序。
+   - macOS Apple Silicon：如果该版本提供 `CodexPilot-*-macos-arm64.dmg`，打开后把 `CodexPilot.app` 拖入 Applications。
+2. 打开 CodexPilot 管理器，进入“启动”，确认 Codex 路径后点击“启动”。
+3. Codex 页面打开后，可以直接使用 CodexPilot 菜单导出当前会话。
+4. 需要自定义模型请求时，进入“模型通道”配置混合中转。
+5. 需要整理历史会话时，进入“对话维护”处理回收站或同步 Provider 归属。
 
-macOS 当前包未做 Apple Developer ID 签名和公证。如果系统提示无法验证开发者，请先阅读 DMG 内说明，再按需使用随包提供的修复脚本。
+macOS 当前包未做 Apple Developer ID 签名和公证。如果系统提示无法验证开发者，请先阅读 DMG 内说明，再按需使用随包提供的修复脚本。macOS Intel 当前没有已验证安装包，需要自行从源码验证。
 
-## 核心功能
+## 核心亮点
 
-- **启动与注入**：从桌面管理器启动 Codex，并在 Codex 页面注入 CodexPilot 操作菜单。
-- **会话导出**：把当前会话导出为 Markdown，方便归档、检索和分享。
-- **对话维护**：删除会话、短时撤销、查看回收站、恢复或永久清理删除备份。
-- **归档会话处理**：支持归档会话的导出、删除和批量删除。
-- **混合中转**：保留官方 Codex/ChatGPT 登录态，同时把模型请求切到自定义兼容 API。
-- **Provider 归属同步**：手动预览并同步历史会话的 Provider 元数据，避免自动改写本地历史数据。
-- **诊断快照**：收集启动、注入、页面连接、路由和中转配置相关日志，便于定位问题。
+### 混合中转
+
+混合中转是 CodexPilot 的重点能力。它保留官方 Codex/ChatGPT 登录态，同时把模型请求切到自定义兼容 API。这样你可以继续使用手机 ChatGPT 控制或接续桌面 Codex，又能让桌面 Codex 的模型请求走自己的中转站。
+
+自定义 Provider 会收到模型请求，隐私、计费和数据处理策略以你配置的 Provider 为准。
+
+![CodexPilot 模型通道页面](docs/images/readme-provider.png)
+
+### Provider 归属同步
+
+切换模型通道后，历史会话可能因为 Provider 元数据不一致而不可见或分组异常。CodexPilot 不会自动改写历史数据；你可以在“对话维护”里先预览影响范围，再手动把会话归属同步到选定 Provider。
+
+![CodexPilot 对话维护页面](docs/images/readme-recycle-bin.png)
+
+## 其他功能
+
+- 启动与注入
+- 会话导出
+- 对话维护
+- 归档会话处理
+- 诊断快照
 
 完整功能说明见 [docs/features.md](docs/features.md)。
-
-## 安装
-
-从 [GitHub Releases](https://github.com/hl9565/CodexPilot/releases) 下载对应平台安装包：
-
-- Windows：`CodexPilot-*-windows-x64-setup.exe`
-- macOS Apple Silicon：`CodexPilot-*-macos-arm64.dmg`（如该版本提供）
-
-Windows 运行安装程序后会创建桌面和开始菜单快捷方式。
-
-macOS 如提供 DMG，打开后把 `CodexPilot.app` 拖入 Applications。macOS Intel 构建脚本预留了 `x86_64-apple-darwin` target，但当前未作为已验证安装包发布；如果你使用 Intel Mac，需要自行从源码验证打包。
-
-### 源码运行
-
-从源码运行需要先安装 Rust、Node.js 和 npm：
-
-```bash
-cd apps/codex-pilot-manager
-npm install
-npm run dev
-```
-
-源码运行适合本地调试和临时使用，不需要先打包成 DMG。
 
 ## 本地数据与安全
 
@@ -82,10 +75,7 @@ CodexPilot 会读取或写入本机 `~/.codex` 下的配置、会话、归档会
 ## 文档
 
 - [功能说明](docs/features.md)：启动、模型通道、会话维护、Provider 同步、诊断和本地数据说明。
-- [架构说明](docs/development/architecture.md)：项目结构和主要模块。
 - [README 维护准则](docs/development/readme-guidelines.md)：项目首页的信息架构和文案规则。
-- [发布流程](docs/development/release.md)：打包、发布和发布前检查。
-- [路线图](docs/development/roadmap.md)：后续方向。
 
 ## 交流与支持
 
@@ -94,28 +84,6 @@ CodexPilot 会读取或写入本机 `~/.codex` 下的配置、会话、归档会
 <img width="313" height="481" alt="CodexPilot 微信交流群二维码" src="https://github.com/user-attachments/assets/ca69b9b2-64f9-461d-b81b-7f1a3b0eb6b9" />
 
 本项目链接并认可 [LINUX DO](https://linux.do/) 社区。欢迎在社区讨论帖中反馈问题、分享使用体验或提出改进建议。
-
-## 开发
-
-```bash
-cargo test
-node scripts/test-renderer-inject.mjs
-
-cd apps/codex-pilot-manager
-npm install
-npm run check
-```
-
-### 管理器 UI 预览
-
-改管理器界面时，可以直接在浏览器里打开开发期预览，不需要启动完整 Tauri 桌面壳：
-
-```bash
-cd apps/codex-pilot-manager
-npm run preview:ui
-```
-
-然后打开 `http://127.0.0.1:1420`。预览模式会使用本地 mock 数据，覆盖启动、模型通道、对话维护和诊断页面；外层窗口默认使用真实 App 配置里的 `1120x760` 尺寸，方便检查 UI 在实际桌面窗口中的表现。
 
 ## License
 

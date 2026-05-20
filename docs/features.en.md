@@ -1,12 +1,24 @@
 # CodexPilot Feature Guide
 
-This document keeps the full CodexPilot feature guide. The README stays focused on the project homepage, quick start, and core entry points. New features should be documented here first, then promoted into the README only when they are important enough for the first page.
+This guide explains what each CodexPilot page does, which local data it reads or writes, and which operations should be previewed before writing changes. The README stays focused on the homepage and quick entry points; full feature details live here.
+
+## Contents
+
+- [Launch And Injection](#launch-and-injection)
+- [Session Export And Maintenance](#session-export-and-maintenance)
+- [Model Channel](#model-channel)
+- [Provider Ownership Sync](#provider-ownership-sync)
+- [Diagnostics](#diagnostics)
+- [Local Data And Security](#local-data-and-security)
+- [Compatibility](#compatibility)
 
 ## Launch And Injection
 
 CodexPilot starts Codex through a local launcher and connects to the renderer through Chromium DevTools Protocol. After injection succeeds, a CodexPilot action menu appears inside Codex.
 
 If Codex is already running through another path, the manager will suggest re-injection or restart based on the current state. Restarting asks for confirmation first so unsaved input is not closed unexpectedly.
+
+![CodexPilot launch page](images/readme-launch.png)
 
 ## Session Export And Maintenance
 
@@ -20,11 +32,17 @@ CodexPilot can add extra actions to regular and archived sessions:
 
 Delete and restore operations read and write the local Codex session database. CodexPilot keeps recoverable backups where possible, but you should still review session contents before batch cleanup.
 
+![CodexPilot dialog maintenance page](images/readme-recycle-bin.png)
+
 ## Model Channel
 
 ### Hybrid Relay
 
-Hybrid Relay is for users who have already completed the official Codex/ChatGPT login and want model requests to go through a custom compatible API.
+Hybrid Relay is for users who have already completed the official Codex/ChatGPT login and want model requests to go through a custom compatible API. The point is not just to “switch API endpoints”: CodexPilot keeps the official login path available, so you can keep using mobile ChatGPT to control or continue desktop Codex while desktop Codex sends model requests through your configured Provider.
+
+![CodexPilot model channel page](images/readme-provider.png)
+
+Base URL and API Key come from a third-party or self-hosted OpenAI-compatible API. The official login state keeps Codex/ChatGPT login compatibility and the cross-device control experience; once Hybrid Relay is enabled, model requests are sent to the custom Provider you configured, and that Provider's privacy, billing, and data handling policies apply.
 
 Setup steps:
 
@@ -35,7 +53,7 @@ Setup steps:
 5. Choose Hybrid Relay and save.
 6. Launch or re-inject Codex from CodexPilot.
 
-CodexPilot writes to `~/.codex/config.toml` in a shape similar to:
+You normally do not need to edit the config file manually. CodexPilot writes to `~/.codex/config.toml` in a shape similar to:
 
 ```toml
 model_provider = "CodexPilot"
@@ -59,9 +77,13 @@ When you choose Official Channel and save, CodexPilot will:
 - switch `model_provider` back to `chatgpt`;
 - keep a configuration backup before writing.
 
+If you manually added a root-level `OPENAI_API_KEY` in `~/.codex/config.toml`, switching back to Official Channel will remove it too. CodexPilot keeps a backup before writing.
+
 ## Provider Ownership Sync
 
-After provider changes, old sessions may be hidden or grouped incorrectly because their `model_provider` metadata differs. CodexPilot no longer rewrites historical session ownership automatically. To maintain historical data, open Dialog Maintenance, use Dialog Ownership Sync, preview the impact, then manually sync to the selected provider.
+After provider changes, old sessions may be hidden or grouped incorrectly because their `model_provider` metadata differs. CodexPilot no longer rewrites historical session ownership automatically. To make historical sessions visible or grouped under a selected provider, open Dialog Maintenance, use Dialog Ownership Sync, preview the impact, then manually sync to the selected provider.
+
+If you are only switching model channels temporarily, or if the previewed impact is unclear, do not sync yet. Use this only when historical sessions are missing or grouped incorrectly and you are sure you want those records assigned to the target Provider.
 
 Sync scope:
 
@@ -79,6 +101,8 @@ Backup location:
 ## Diagnostics
 
 The manager shows checks for launch, injection, relay, and page connection state. It can also export diagnostic logs for troubleshooting or issue reports.
+
+![CodexPilot diagnostics page](images/readme-diagnostics.png)
 
 Diagnostics are mainly used to check:
 
@@ -103,6 +127,14 @@ CodexPilot reads or writes these local paths:
 Relay profiles are saved locally. API keys are hidden in status panels, but they are still stored in local configuration files. Use CodexPilot only on trusted devices, and avoid uploading local config, logs, screenshots, or backup directories to public repositories.
 
 When using a custom compatible API, verify the provider's privacy, billing, and data handling policies yourself.
+
+CodexPilot also uses a local loopback debug port and a local helper port. Chromium DevTools Protocol connections can execute page scripts, so use CodexPilot only in a trusted local environment.
+
+Additional data locations:
+
+- `~/.codex/config.toml.codex-pilot-backup-*.bak`: config backups kept before model-channel writes; they may contain old API keys.
+- `~/.codex/.codex-pilot-undo/`: undo/recycle-bin backups created after deleting sessions.
+- `provider-profiles.json` under the CodexPilot app state directory: relay profiles containing Base URL and API Key. On macOS/Linux this is usually under `~/.config/CodexPilot/`; on Windows it is usually under `%APPDATA%\CodexPilot\`.
 
 ## Compatibility
 

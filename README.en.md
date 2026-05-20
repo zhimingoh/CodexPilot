@@ -5,7 +5,7 @@
 <h1 align="center">CodexPilot</h1>
 
 <p align="center">
-  A local launcher, conversation maintenance, and model-channel manager for Codex.
+  Make local Codex workflows smoother and more controllable.
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
   <a href="Cargo.toml"><img alt="Rust workspace" src="https://img.shields.io/badge/Rust-workspace-b7410e" /></a>
 </p>
 
-CodexPilot starts and injects Codex from a local desktop manager, making session export, recycle bin cleanup, Provider ownership sync, Hybrid Relay, and diagnostics explicit and controllable. It does not modify the Codex App installation directory.
+CodexPilot is for people who already use Codex App locally. It provides a local manager and connects to running Codex pages through Chromium DevTools Protocol. Use it to launch Codex, export sessions, manage the recycle bin, sync Provider ownership, configure Hybrid Relay, and inspect diagnostics, without modifying Codex App's installed files or replacing the app.
 
 > CodexPilot is unofficial and is not affiliated with OpenAI or Codex App.
 
@@ -28,48 +28,43 @@ CodexPilot starts and injects Codex from a local desktop manager, making session
 
 ## Quick Start
 
-1. Download an installer from [GitHub Releases](https://github.com/hl9565/CodexPilot/releases).
-2. Open the CodexPilot manager.
-3. Go to Launch and check the Codex path and port state.
-4. Click Launch or Re-inject to open Codex through CodexPilot.
-5. For custom model routing, configure Hybrid Relay in Model Channel. For historical session cleanup, use Dialog Maintenance.
+1. Open [GitHub Releases](https://github.com/hl9565/CodexPilot/releases) and download the package for your platform from the Assets section. Do not use the Source code archive as an installer.
+   - Windows: download `CodexPilot-*-windows-x64-setup.exe` and run the installer.
+   - macOS Apple Silicon: if the release provides `CodexPilot-*-macos-arm64.dmg`, open it and drag `CodexPilot.app` into Applications.
+2. Open the CodexPilot manager, go to Launch, confirm the Codex path, and click Launch.
+3. After Codex opens, use the CodexPilot menu to export the current session.
+4. For custom model requests, configure Hybrid Relay in Model Channel.
+5. To maintain historical sessions, use Dialog Maintenance for recycle bin cleanup or Provider ownership sync.
 
 Current macOS packages are not signed with an Apple Developer ID and are not notarized. If macOS cannot verify the app, read the note inside the DMG before using the bundled helper script.
 
-## Core Features
+macOS Intel builds are not currently published as verified release assets. If you use an Intel Mac, build and verify it from source.
 
-- **Launch and injection**: start Codex from the desktop manager and inject the CodexPilot action menu.
-- **Session export**: export the current conversation to Markdown for archiving, search, or sharing.
-- **Dialog maintenance**: delete sessions, briefly undo deletion, inspect the recycle bin, restore records, or permanently clean backups.
-- **Archived session handling**: export, delete, and batch-delete archived sessions.
-- **Hybrid Relay**: keep the official Codex/ChatGPT login state while routing model requests to a custom compatible API.
-- **Provider ownership sync**: preview and manually sync historical session Provider metadata instead of rewriting local history automatically.
-- **Diagnostics snapshots**: collect launch, injection, page connection, route, and provider configuration logs for troubleshooting.
+## Highlights
+
+### Hybrid Relay
+
+Hybrid Relay is a key CodexPilot feature. It keeps the official Codex/ChatGPT login state while routing model requests to a custom compatible API. This lets you keep using mobile ChatGPT to control or continue desktop Codex, while desktop Codex sends model requests through your own relay provider.
+
+The custom Provider receives those model requests, so its privacy, billing, and data handling policies apply.
+
+![CodexPilot model channel page](docs/images/readme-provider.png)
+
+### Provider Ownership Sync
+
+After switching model channels, historical sessions may disappear or group incorrectly because their Provider metadata no longer matches. CodexPilot does not rewrite historical data automatically; in Dialog Maintenance, you can preview the impact first, then manually sync session ownership to the selected Provider.
+
+![CodexPilot dialog maintenance page](docs/images/readme-recycle-bin.png)
+
+## Other Features
+
+- Launch and injection
+- Session export
+- Dialog maintenance
+- Archived session handling
+- Diagnostics snapshots
 
 See [docs/features.en.md](docs/features.en.md) for the full feature guide.
-
-## Installation
-
-Download the package for your platform from [GitHub Releases](https://github.com/hl9565/CodexPilot/releases):
-
-- Windows: `CodexPilot-*-windows-x64-setup.exe`
-- macOS Apple Silicon: `CodexPilot-*-macos-arm64.dmg`, when provided for that release
-
-On Windows, run the installer; it creates desktop and Start menu shortcuts.
-
-On macOS, open the DMG and drag `CodexPilot.app` into Applications. The macOS packaging script keeps an `x86_64-apple-darwin` target for Intel Macs, but Intel builds are not currently published as verified release assets. If you use an Intel Mac, build and verify it from source.
-
-### Run From Source
-
-Running from source requires Rust, Node.js, and npm:
-
-```bash
-cd apps/codex-pilot-manager
-npm install
-npm run dev
-```
-
-Source mode is useful for local development and temporary usage. You do not need to package a DMG first.
 
 ## Local Data And Security
 
@@ -82,10 +77,7 @@ See the [feature guide](docs/features.en.md#local-data-and-security) for the ful
 ## Docs
 
 - [Feature guide](docs/features.en.md): launch, model channels, dialog maintenance, Provider sync, diagnostics, and local data.
-- [Architecture](docs/development/architecture.md): project structure and major modules.
-- [README guidelines](docs/development/readme-guidelines.md): homepage information architecture and copy rules.
-- [Release process](docs/development/release.md): packaging, publishing, and pre-release checks.
-- [Roadmap](docs/development/roadmap.md): future direction.
+- [README guidelines](docs/development/readme-guidelines.md): homepage information architecture and copy rules, currently in Chinese.
 
 ## Support
 
@@ -94,28 +86,6 @@ For usage questions, feedback, and release updates, you can join the WeChat grou
 <img width="313" height="481" alt="CodexPilot WeChat group QR code" src="https://github.com/user-attachments/assets/ca69b9b2-64f9-461d-b81b-7f1a3b0eb6b9" />
 
 This project links back to and recognizes the [LINUX DO](https://linux.do/) community. Feedback, usage notes, and improvement ideas are welcome in the community discussion thread.
-
-## Development
-
-```bash
-cargo test
-node scripts/test-renderer-inject.mjs
-
-cd apps/codex-pilot-manager
-npm install
-npm run check
-```
-
-### Manager UI Preview
-
-When changing the manager UI, you can preview it in the browser without launching the full Tauri desktop shell:
-
-```bash
-cd apps/codex-pilot-manager
-npm run preview:ui
-```
-
-Then open `http://127.0.0.1:1420`. Preview mode uses local mock data for launch, model channel, dialog maintenance, and diagnostics pages. The outer window uses the real app's default `1120x760` size to make layout checks closer to the desktop app.
 
 ## License
 
