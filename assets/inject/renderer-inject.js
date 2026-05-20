@@ -11,15 +11,25 @@
 
   const helperPort = Number("__CODEX_PILOT_HELPER_PORT__");
   const rootId = "codex-pilot-root";
+  const timelineRootId = "codex-pilot-timeline";
   const actionGroupClass = "codex-pilot-row-actions";
   const actionButtonClass = "codex-pilot-row-action";
   const archiveActionClass = "codex-pilot-archive-action";
+  const scrollStoreKey = "codexPilotThreadScroll";
+  const maxScrollEntries = 100;
   const selectors = {
     sidebarThread: "[data-app-action-sidebar-thread-id]",
     threadTitle: "[data-thread-title], .truncate.select-none, .truncate.text-base",
     archiveNav: 'button[aria-label="已归档对话"], button[aria-label="Archived conversations"]'
   };
   let lastUndoToken = null;
+  let activeScrollSessionId = "";
+  let restoreInProgressUntil = 0;
+  let userScrollIntentUntil = 0;
+  let scrollSaveTimer = null;
+  let routeCheckTimer = null;
+  let lastTimelineSignature = "";
+  let lastTimelineNoTargetsAt = 0;
 
   window.__CODEX_PILOT__ = {
     version: scriptVersion,
@@ -94,18 +104,42 @@
 
       #${rootId} .codex-pilot-button {
         align-items: center;
-        background: #2563eb;
-        border: 1px solid #1d55d7;
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid rgba(148, 163, 184, 0.42);
         border-radius: 999px;
-        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.22);
-        color: #ffffff;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+        color: #263241;
         cursor: pointer;
         display: inline-flex;
         font-size: 13px;
         font-weight: 700;
-        gap: 8px;
-        min-height: 38px;
-        padding: 0 14px;
+        gap: 7px;
+        min-height: 30px;
+        padding: 0 10px;
+        transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+      }
+
+      #${rootId} .codex-pilot-button:hover,
+      #${rootId}[data-open="true"] .codex-pilot-button {
+        background: rgba(255, 255, 255, 0.96);
+        border-color: rgba(100, 116, 139, 0.55);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+      }
+
+      #${rootId} .codex-pilot-status-dot {
+        background: #94a3b8;
+        border-radius: 999px;
+        display: inline-block;
+        height: 7px;
+        width: 7px;
+      }
+
+      #${rootId}[data-status="checking"] .codex-pilot-status-dot {
+        background: #d6a21d;
+      }
+
+      #${rootId}[data-status="connected"] .codex-pilot-status-dot {
+        background: #16a36a;
       }
 
       #${rootId} .codex-pilot-panel {
@@ -134,15 +168,6 @@
 
       #${rootId} .codex-pilot-title strong {
         font-size: 13px;
-      }
-
-      #${rootId} .codex-pilot-pill {
-        background: #eef4ff;
-        border-radius: 999px;
-        color: #17408f;
-        font-size: 11px;
-        font-weight: 700;
-        padding: 3px 7px;
       }
 
       #${rootId} .codex-pilot-action {
@@ -205,13 +230,18 @@
 
       .${actionGroupClass} {
         align-items: center;
+        background: rgba(31, 36, 48, 0.78);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 7px;
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
         display: inline-flex;
-        gap: 4px;
+        gap: 2px;
         opacity: 0;
         pointer-events: none;
         position: absolute;
         right: 8px;
         top: 50%;
+        padding: 2px;
         transform: translateY(-50%);
         transition: opacity 120ms ease;
         z-index: 4;
@@ -225,28 +255,41 @@
 
       .${actionButtonClass},
       .${archiveActionClass} {
-        background: #ffffff;
-        border: 1px solid #d7dde5;
-        border-radius: 6px;
-        color: #233044;
+        align-items: center;
+        background: transparent;
+        border: 0;
+        border-radius: 5px;
+        color: #d9dee8;
         cursor: pointer;
-        font-size: 12px;
-        font-weight: 650;
-        line-height: 1;
-        min-height: 26px;
-        padding: 0 8px;
-        white-space: nowrap;
+        display: inline-flex;
+        height: 24px;
+        justify-content: center;
+        padding: 0;
+        width: 24px;
       }
 
       .${actionButtonClass}:hover,
       .${archiveActionClass}:hover {
-        background: #eef4ff;
-        border-color: #b9cdf8;
+        background: rgba(255, 255, 255, 0.12);
+        color: #ffffff;
       }
 
       .${actionButtonClass}[data-danger="true"],
       .${archiveActionClass}[data-danger="true"] {
-        color: #9f1d1d;
+        color: #f7b4b4;
+      }
+
+      .${actionButtonClass}[data-danger="true"]:hover,
+      .${archiveActionClass}[data-danger="true"]:hover {
+        color: #ffffff;
+      }
+
+      .${actionButtonClass} svg,
+      .${archiveActionClass} svg {
+        display: block;
+        height: 15px;
+        pointer-events: none;
+        width: 15px;
       }
 
       .codex-pilot-toast {
@@ -276,6 +319,75 @@
 
       .codex-pilot-archive-bar {
         margin: 8px 0 0 0;
+      }
+
+      .codex-pilot-timeline {
+        bottom: 92px;
+        pointer-events: none;
+        position: fixed;
+        right: 8px;
+        top: 118px;
+        width: 26px;
+        z-index: 2147483000;
+      }
+
+      .codex-pilot-timeline-track {
+        background: rgba(95, 107, 128, 0.28);
+        border-radius: 999px;
+        bottom: 6px;
+        left: 12px;
+        position: absolute;
+        top: 6px;
+        width: 2px;
+      }
+
+      .codex-pilot-timeline-marker {
+        align-items: center;
+        background: #ffffff;
+        border: 1px solid rgba(37, 99, 235, 0.54);
+        border-radius: 999px;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+        color: #2563eb;
+        cursor: pointer;
+        display: flex;
+        height: 11px;
+        justify-content: center;
+        left: 8px;
+        padding: 0;
+        pointer-events: auto;
+        position: absolute;
+        transform: translateY(-50%);
+        width: 11px;
+      }
+
+      .codex-pilot-timeline-marker:hover,
+      .codex-pilot-timeline-marker:focus-visible {
+        background: #2563eb;
+        border-color: #ffffff;
+        outline: none;
+      }
+
+      .codex-pilot-timeline-tooltip {
+        background: rgba(17, 24, 39, 0.94);
+        border-radius: 7px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+        color: #ffffff;
+        display: none;
+        font-size: 12px;
+        line-height: 1.35;
+        max-width: min(280px, calc(100vw - 72px));
+        padding: 7px 9px;
+        position: absolute;
+        right: 22px;
+        top: 50%;
+        transform: translateY(-50%);
+        white-space: normal;
+        width: max-content;
+      }
+
+      .codex-pilot-timeline-marker:hover .codex-pilot-timeline-tooltip,
+      .codex-pilot-timeline-marker:focus-visible .codex-pilot-timeline-tooltip {
+        display: block;
       }
     `;
     document.head.appendChild(style);
@@ -385,10 +497,57 @@
     }
   }
 
+  function isCurrentSession(session) {
+    const sessionId = String(session?.session_id || "").trim();
+    return Boolean(sessionId && currentSessionKey() === sessionId);
+  }
+
+  function safeCodexHomeUrl() {
+    try {
+      const current = new URL(window.location.href);
+      if (current.pathname.includes("/codex")) {
+        current.pathname = "/codex";
+        current.search = "";
+        current.hash = "";
+        return current.toString();
+      }
+      return current.origin || "/";
+    } catch (_error) {
+      return "/";
+    }
+  }
+
+  function leaveDeletedCurrentSession(deletedSessionId) {
+    const nextRow = sessionRows()
+      .find((candidate) => candidate.getAttribute("data-app-action-sidebar-thread-id") !== deletedSessionId);
+    if (nextRow) {
+      try {
+        nextRow.click();
+        return;
+      } catch (_error) {
+        // Fall through to a route reset if the host row cannot be clicked.
+      }
+    }
+    window.location.href = safeCodexHomeUrl();
+  }
+
   function stopRowActionEvent(event) {
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
+  }
+
+  function installRowActionEvents(button, onActivate) {
+    ["pointerdown", "mousedown", "mouseup", "touchstart"].forEach((eventName) => {
+      button.addEventListener(eventName, stopRowActionEvent, true);
+    });
+    button.addEventListener("click", onActivate, true);
+  }
+
+  function setIconButtonContent(button, label, svgPath) {
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svgPath}</svg>`;
   }
 
   function showToast(message, undoToken) {
@@ -448,6 +607,10 @@
     if (!window.confirm(`确认删除“${title}”？删除前会创建可撤销备份。`)) {
       return false;
     }
+    const deletingCurrentSession = isCurrentSession(session);
+    if (deletingCurrentSession && !window.confirm("你正在删除当前打开的会话。删除后会自动切换到其他会话或返回 Codex 首页，确认继续？")) {
+      return false;
+    }
     const response = await window.__CODEX_PILOT__.deleteSession(sessionPayload(session));
     const result = response.result || response;
     if (response.status !== "ok" || result.status === "failed" || result.status === "not_found") {
@@ -460,6 +623,9 @@
       container?.remove();
     } else {
       syncDeletedSessionRow(session);
+    }
+    if (deletingCurrentSession) {
+      leaveDeletedCurrentSession(session.session_id);
     }
     notify(result.message || "已删除会话", lastUndoToken);
     return true;
@@ -476,21 +642,29 @@
     const exportButton = document.createElement("button");
     exportButton.type = "button";
     exportButton.className = actionButtonClass;
-    exportButton.textContent = "导出";
-    exportButton.addEventListener("click", async (event) => {
+    setIconButtonContent(
+      exportButton,
+      "导出 Markdown",
+      '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>'
+    );
+    installRowActionEvents(exportButton, async (event) => {
       stopRowActionEvent(event);
       await exportSession(session);
-    }, true);
+    });
 
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = actionButtonClass;
     deleteButton.dataset.danger = "true";
-    deleteButton.textContent = "删除";
-    deleteButton.addEventListener("click", async (event) => {
+    setIconButtonContent(
+      deleteButton,
+      "删除会话",
+      '<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>'
+    );
+    installRowActionEvents(deleteButton, async (event) => {
       stopRowActionEvent(event);
       await deleteSession(session, row);
-    }, true);
+    });
 
     group.append(exportButton, deleteButton);
     row.appendChild(group);
@@ -544,8 +718,12 @@
     const exportButton = document.createElement("button");
     exportButton.type = "button";
     exportButton.className = archiveActionClass;
-    exportButton.textContent = "导出";
-    exportButton.addEventListener("click", async (event) => {
+    setIconButtonContent(
+      exportButton,
+      "导出 Markdown",
+      '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>'
+    );
+    installRowActionEvents(exportButton, async (event) => {
       stopRowActionEvent(event);
       const session = await resolveArchiveSession(row);
       if (!session.session_id) {
@@ -553,14 +731,18 @@
         return;
       }
       await exportSession(session);
-    }, true);
+    });
 
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = archiveActionClass;
     deleteButton.dataset.danger = "true";
-    deleteButton.textContent = "删除";
-    deleteButton.addEventListener("click", async (event) => {
+    setIconButtonContent(
+      deleteButton,
+      "删除会话",
+      '<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>'
+    );
+    installRowActionEvents(deleteButton, async (event) => {
       stopRowActionEvent(event);
       const session = await resolveArchiveSession(row);
       if (!session.session_id) {
@@ -568,7 +750,7 @@
         return;
       }
       await deleteSession(session, row);
-    }, true);
+    });
 
     unarchiveButton.insertAdjacentElement("afterend", deleteButton);
     unarchiveButton.insertAdjacentElement("afterend", exportButton);
@@ -592,16 +774,31 @@
       const currentRows = archiveRows();
       if (!currentRows.length) return;
       if (!window.confirm(`确认删除全部 ${currentRows.length} 个归档会话？删除前会创建可撤销备份。`)) return;
-      let deleted = 0;
+      const resolved = [];
       for (const row of currentRows) {
         const session = await resolveArchiveSession(row);
-        if (!session.session_id) continue;
+        if (session.session_id) {
+          resolved.push({ row, session });
+        }
+      }
+      const currentEntry = resolved.find(({ session }) => isCurrentSession(session));
+      if (currentEntry && !window.confirm("删除列表包含当前打开的会话。删除后会自动切换到其他会话或返回 Codex 首页，确认继续？")) return;
+      let deleted = 0;
+      let deletedCurrentSessionId = "";
+      for (const { row, session } of resolved) {
+        const deletingCurrentSession = isCurrentSession(session);
         const response = await window.__CODEX_PILOT__.deleteSession(sessionPayload(session));
         const result = response.result || response;
         if (response.status === "ok" && result.status !== "failed" && result.status !== "not_found") {
           row.remove();
           deleted += 1;
+          if (deletingCurrentSession) {
+            deletedCurrentSessionId = session.session_id;
+          }
         }
+      }
+      if (deletedCurrentSessionId) {
+        leaveDeletedCurrentSession(deletedCurrentSessionId);
       }
       showToast(`已删除 ${deleted} 个归档会话`, null);
     }, true);
@@ -617,6 +814,315 @@
     installArchiveDeleteAll(rows);
   }
 
+  function currentSessionKey() {
+    return (sessionRefFromUrl()?.session_id || detectCurrentSession()?.session_id || "").trim();
+  }
+
+  function readScrollStore() {
+    try {
+      const parsed = JSON.parse(window.localStorage?.getItem(scrollStoreKey) || "{}");
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  function writeScrollStore(store) {
+    try {
+      const entries = Object.entries(store)
+        .filter(([key, value]) => key && value && typeof value === "object")
+        .sort((left, right) => Number(right[1].at || 0) - Number(left[1].at || 0))
+        .slice(0, maxScrollEntries);
+      window.localStorage?.setItem(scrollStoreKey, JSON.stringify(Object.fromEntries(entries)));
+      return true;
+    } catch (error) {
+      reportRendererEvent("scroll_restore_error", { message: String(error), phase: "write_store" });
+      return false;
+    }
+  }
+
+  function finiteScrollNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : 0;
+  }
+
+  function scrollContainerCandidates() {
+    return [
+      document.querySelector(".thread-scroll-container"),
+      document.querySelector("[data-testid='conversation-turn-list']")?.parentElement,
+      document.querySelector("main")?.parentElement,
+      document.scrollingElement,
+      document.documentElement,
+      document.body
+    ].filter(Boolean);
+  }
+
+  function scrollMetric(element, key) {
+    if (element === document.body || element === document.documentElement || element === document.scrollingElement) {
+      if (key === "scrollTop") return finiteScrollNumber(window.scrollY || document.documentElement.scrollTop || document.body.scrollTop);
+      if (key === "clientHeight") return finiteScrollNumber(window.innerHeight || document.documentElement.clientHeight);
+      if (key === "scrollHeight") return finiteScrollNumber(document.documentElement.scrollHeight || document.body.scrollHeight);
+    }
+    return finiteScrollNumber(element?.[key]);
+  }
+
+  function currentThreadScroller() {
+    const candidates = scrollContainerCandidates();
+    return candidates.find((element) => {
+      const scrollHeight = scrollMetric(element, "scrollHeight");
+      const clientHeight = scrollMetric(element, "clientHeight");
+      return scrollHeight > clientHeight + 80;
+    }) || document.scrollingElement || document.documentElement || document.body;
+  }
+
+  function setScrollTop(element, top) {
+    const target = Math.max(0, finiteScrollNumber(top));
+    if (element === document.body || element === document.documentElement || element === document.scrollingElement) {
+      window.scrollTo?.({ top: target, behavior: "auto" });
+      document.documentElement.scrollTop = target;
+      document.body.scrollTop = target;
+      return;
+    }
+    element.scrollTop = target;
+  }
+
+  function saveThreadScrollPosition(reason = "periodic") {
+    const session = detectCurrentSession();
+    const sessionId = session?.session_id;
+    if (!sessionId) return false;
+    const scroller = currentThreadScroller();
+    const top = scrollMetric(scroller, "scrollTop");
+    if (!scroller || top < 0) return false;
+    const store = readScrollStore();
+    store[sessionId] = {
+      top,
+      at: Date.now(),
+      title: session.title || "",
+      href: String(window.location.href || "")
+    };
+    if (writeScrollStore(store)) {
+      reportRendererEvent("scroll_restore_saved", { session_id: sessionId, top, reason });
+      return true;
+    }
+    return false;
+  }
+
+  function scheduleSaveThreadScroll(reason = "scroll") {
+    if (Date.now() < restoreInProgressUntil) return;
+    if (scrollSaveTimer) return;
+    scrollSaveTimer = setTimeout(() => {
+      scrollSaveTimer = null;
+      saveThreadScrollPosition(reason);
+    }, 160);
+  }
+
+  function userScrollIntentActive() {
+    return Date.now() < userScrollIntentUntil;
+  }
+
+  function restoreThreadScrollPosition(sessionId, attempt = 0) {
+    if (!sessionId) return;
+    const store = readScrollStore();
+    const entry = store[sessionId];
+    if (!entry || !Number.isFinite(Number(entry.top))) {
+      reportRendererEvent("scroll_restore_skipped", { session_id: sessionId, reason: "no_entry" });
+      return;
+    }
+    if (userScrollIntentActive()) {
+      reportRendererEvent("scroll_restore_skipped", { session_id: sessionId, reason: "user_scroll" });
+      return;
+    }
+    const scroller = currentThreadScroller();
+    const scrollHeight = scrollMetric(scroller, "scrollHeight");
+    const clientHeight = scrollMetric(scroller, "clientHeight");
+    if (scrollHeight <= clientHeight + 80 && attempt < 5) {
+      setTimeout(() => restoreThreadScrollPosition(sessionId, attempt + 1), 180 + attempt * 160);
+      return;
+    }
+    const maxTop = Math.max(0, scrollHeight - clientHeight);
+    const targetTop = Math.min(finiteScrollNumber(entry.top), maxTop);
+    if (maxTop <= 0) {
+      reportRendererEvent("scroll_restore_skipped", { session_id: sessionId, reason: "no_scroll_range" });
+      return;
+    }
+    restoreInProgressUntil = Date.now() + 700;
+    setScrollTop(scroller, targetTop);
+    reportRendererEvent("scroll_restore_applied", {
+      session_id: sessionId,
+      top: targetTop,
+      attempt
+    });
+  }
+
+  function handleThreadMaybeChanged(reason = "poll") {
+    const nextSessionId = currentSessionKey();
+    if (!nextSessionId || nextSessionId === activeScrollSessionId) return;
+    if (activeScrollSessionId) {
+      saveThreadScrollPosition(`before_${reason}`);
+    }
+    const previousSessionId = activeScrollSessionId;
+    activeScrollSessionId = nextSessionId;
+    reportRendererEvent("thread_changed", {
+      previous_session_id: previousSessionId,
+      session_id: nextSessionId,
+      reason
+    });
+    [80, 260, 620, 1200].forEach((delay, index) => {
+      setTimeout(() => restoreThreadScrollPosition(nextSessionId, index), delay);
+    });
+    refreshTimelineSoon();
+  }
+
+  function installScrollRestore() {
+    activeScrollSessionId = currentSessionKey();
+    const markUserScrollIntent = () => {
+      if (Date.now() >= restoreInProgressUntil) {
+        userScrollIntentUntil = Date.now() + 1000;
+      }
+      scheduleSaveThreadScroll("scroll");
+    };
+    document.addEventListener("scroll", markUserScrollIntent, true);
+    document.addEventListener("wheel", () => {
+      userScrollIntentUntil = Date.now() + 1200;
+    }, true);
+    document.addEventListener("touchmove", () => {
+      userScrollIntentUntil = Date.now() + 1200;
+    }, true);
+    document.addEventListener("pointerdown", (event) => {
+      const row = event.target?.closest?.(selectors.sidebarThread);
+      if (!row) return;
+      saveThreadScrollPosition("before_sidebar_navigation");
+      const ref = sessionRefFromRow(row, "navigation");
+      reportRendererEvent("thread_changed", {
+        previous_session_id: activeScrollSessionId,
+        session_id: ref?.session_id || "",
+        reason: "sidebar_pointer"
+      });
+    }, true);
+    window.addEventListener?.("beforeunload", () => saveThreadScrollPosition("beforeunload"));
+    if (!window.__codexPilotHistoryPatched) {
+      window.__codexPilotHistoryPatched = true;
+      ["pushState", "replaceState"].forEach((method) => {
+        const original = history?.[method];
+        if (typeof original !== "function") return;
+        history[method] = function codexPilotPatchedHistory(...args) {
+          saveThreadScrollPosition(`before_${method}`);
+          const result = original.apply(this, args);
+          setTimeout(() => handleThreadMaybeChanged(method), 0);
+          return result;
+        };
+      });
+      window.addEventListener?.("popstate", () => {
+        saveThreadScrollPosition("before_popstate");
+        setTimeout(() => handleThreadMaybeChanged("popstate"), 0);
+      }, true);
+    }
+    if (typeof window.setInterval === "function") {
+      routeCheckTimer = window.setInterval(() => handleThreadMaybeChanged("interval"), 650);
+    }
+    reportRendererEvent("scroll_restore_ready", { session_id: activeScrollSessionId });
+  }
+
+  function timelineTextFromNode(node) {
+    return normalizeText(node?.textContent || "")
+      .replace(/\b(CodexPilot|导出 Markdown|删除会话)\b/g, "")
+      .trim()
+      .slice(0, 120);
+  }
+
+  function messageCandidates() {
+    const selectors = [
+      "[data-message-author-role='user']",
+      "[data-testid*='conversation-turn']",
+      "[data-testid*='user-message']",
+      "[class*='user-message']"
+    ];
+    const seen = new Set();
+    const nodes = [];
+    selectors.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((node) => {
+        if (seen.has(node)) return;
+        seen.add(node);
+        const text = timelineTextFromNode(node);
+        const rect = node.getBoundingClientRect?.();
+        if (text.length >= 2 && (!rect || rect.height > 0)) {
+          nodes.push({ node, text });
+        }
+      });
+    });
+    return nodes.slice(0, 80);
+  }
+
+  function removeTimeline() {
+    document.getElementById(timelineRootId)?.remove();
+    lastTimelineSignature = "";
+  }
+
+  function renderTimeline() {
+    try {
+      const sessionId = currentSessionKey();
+      if (!sessionId) {
+        removeTimeline();
+        return;
+      }
+      const items = messageCandidates();
+      if (items.length < 2) {
+        removeTimeline();
+        if (Date.now() - lastTimelineNoTargetsAt > 5000) {
+          lastTimelineNoTargetsAt = Date.now();
+          reportRendererEvent("timeline_no_targets", { session_id: sessionId, count: items.length });
+        }
+        return;
+      }
+      const signature = `${sessionId}:${items.length}:${items.map((item) => item.text.slice(0, 12)).join("|")}`;
+      if (signature === lastTimelineSignature && document.getElementById(timelineRootId)) return;
+      lastTimelineSignature = signature;
+      document.getElementById(timelineRootId)?.remove();
+
+      const scroller = currentThreadScroller();
+      const scrollHeight = Math.max(scrollMetric(scroller, "scrollHeight"), 1);
+      const root = document.createElement("div");
+      root.id = timelineRootId;
+      root.className = "codex-pilot-timeline";
+      const track = document.createElement("div");
+      track.className = "codex-pilot-timeline-track";
+      root.appendChild(track);
+      items.forEach((item, index) => {
+        const rect = item.node.getBoundingClientRect?.();
+        const viewportOffset = rect ? rect.top + scrollMetric(scroller, "scrollTop") : index * (scrollHeight / items.length);
+        const percent = Math.max(2, Math.min(98, (viewportOffset / scrollHeight) * 100));
+        const marker = document.createElement("button");
+        marker.type = "button";
+        marker.className = "codex-pilot-timeline-marker";
+        marker.style.top = `${percent}%`;
+        marker.setAttribute("aria-label", `跳转到第 ${index + 1} 个问题`);
+        const tooltip = document.createElement("span");
+        tooltip.className = "codex-pilot-timeline-tooltip";
+        tooltip.textContent = item.text;
+        marker.appendChild(tooltip);
+        marker.addEventListener("click", (event) => {
+          stopRowActionEvent(event);
+          reportRendererEvent("timeline_jump", {
+            session_id: sessionId,
+            index,
+            text: item.text.slice(0, 80)
+          });
+          item.node.scrollIntoView?.({ block: "center", behavior: "smooth" });
+        }, true);
+        root.appendChild(marker);
+      });
+      document.body.appendChild(root);
+      reportRendererEvent("timeline_rendered", { session_id: sessionId, count: items.length });
+    } catch (error) {
+      removeTimeline();
+      reportRendererEvent("timeline_error", { message: String(error) });
+    }
+  }
+
+  function refreshTimelineSoon() {
+    setTimeout(renderTimeline, 180);
+  }
+
   function normalizeText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
   }
@@ -630,13 +1136,14 @@
     const root = document.createElement("div");
     root.id = rootId;
     root.dataset.open = "false";
+    root.dataset.status = "unknown";
 
     const panel = document.createElement("div");
     panel.className = "codex-pilot-panel";
 
     const title = document.createElement("div");
     title.className = "codex-pilot-title";
-    title.innerHTML = `<strong>CodexPilot</strong><span class="codex-pilot-pill">${scriptVersion}</span>`;
+    title.innerHTML = "<strong>CodexPilot</strong>";
 
     const statusButton = document.createElement("button");
     statusButton.className = "codex-pilot-action";
@@ -654,12 +1161,15 @@
 
     statusButton.addEventListener("click", async () => {
       message.textContent = "正在检查后端...";
+      root.dataset.status = "checking";
       try {
         const result = await window.__CODEX_PILOT__.backendStatus();
+        root.dataset.status = result.status === "ok" ? "connected" : "unknown";
         message.textContent = result.status === "ok"
           ? `${result.message || "后端已连接"} (${result.transport || "bridge"})`
           : result.message || "后端检查失败";
       } catch (error) {
+        root.dataset.status = "unknown";
         message.textContent = String(error);
         reportRendererEvent("backend_status_error", { message: String(error) });
       }
@@ -688,7 +1198,12 @@
     const toggle = document.createElement("button");
     toggle.className = "codex-pilot-button";
     toggle.type = "button";
-    toggle.textContent = "助手";
+    const statusDot = document.createElement("span");
+    statusDot.className = "codex-pilot-status-dot";
+    statusDot.setAttribute("aria-hidden", "true");
+    const toggleLabel = document.createElement("span");
+    toggleLabel.textContent = "Pilot";
+    toggle.append(statusDot, toggleLabel);
     toggle.addEventListener("click", () => {
       root.dataset.open = root.dataset.open === "true" ? "false" : "true";
     });
@@ -700,12 +1215,20 @@
 
   function startRefreshLoop() {
     refreshSessionActions();
+    installScrollRestore();
+    refreshTimelineSoon();
     if (typeof MutationObserver === "function") {
-      const observer = new MutationObserver(() => refreshSessionActions());
+      const observer = new MutationObserver(() => {
+        refreshSessionActions();
+        refreshTimelineSoon();
+      });
       observer.observe(document.body, { childList: true, subtree: true });
     }
     if (typeof window.setInterval === "function") {
-      window.setInterval(refreshSessionActions, 1500);
+      window.setInterval(() => {
+        refreshSessionActions();
+        renderTimeline();
+      }, 1500);
     }
   }
 

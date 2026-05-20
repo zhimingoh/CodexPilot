@@ -8,7 +8,10 @@ apps/*/src-tauri/binaries/
 .agents/
 .handoff/
 docs/development/
+docs/previews/
 docs/superpowers/
+
+assets/dmg/
 
 .codex_asar_extract/
 .codex_asar_extract_latest/
@@ -22,5 +25,6 @@ venv/
 Thumbs.db
 
 .claude/
+AGENTS.md
 
 scripts/package-macos.sh

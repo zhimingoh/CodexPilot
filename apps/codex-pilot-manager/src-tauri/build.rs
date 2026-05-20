@@ -26,7 +26,7 @@ fn prepare_dev_sidecar() {
 
     if profile == "release" {
         panic!(
-            "missing launcher sidecar: {}. Run scripts/package-macos.sh or prepare the platform sidecar before release bundling.",
+            "missing launcher sidecar: {}. Run scripts/package-macos.sh, scripts/package-windows.ps1, or prepare the platform sidecar before release bundling.",
             sidecar_path.display()
         );
     }

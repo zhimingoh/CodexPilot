@@ -1,0 +1,47 @@
+name: Release assets
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install NSIS
+        run: choco install nsis -y
+
+      - name: Install frontend dependencies
+        working-directory: apps/codex-pilot-manager
+        run: npm ci
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $version = "${{ github.event.release.tag_name }}" -replace '^[vV]', ''
+          $env:VERSION = $version
+          .\scripts\package-windows.ps1
+
+      - name: Upload Windows installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: dist/windows/*.exe

@@ -21,6 +21,7 @@ pub struct ChatGptAuthStatus {
 pub struct RelayProviderConfig {
     pub provider: String,
     pub active: bool,
+    pub mode: String,
     pub configured: bool,
     pub authenticated: bool,
     pub account_label: Option<String>,
@@ -109,6 +110,17 @@ pub fn apply_relay_provider_config_to_home(
     apply_relay_provider_config_to_path(&home.join("config.toml"), base_url, bearer_token)
 }
 
+pub fn apply_api_provider_config(
+    base_url: &str,
+    bearer_token: &str,
+) -> anyhow::Result<RelayApplyResult> {
+    apply_api_provider_config_to_path(
+        &crate::app_paths::codex_config_path(),
+        base_url,
+        bearer_token,
+    )
+}
+
 pub fn apply_relay_provider_config_to_path(
     config_path: &Path,
     base_url: &str,
@@ -131,6 +143,39 @@ pub fn apply_relay_provider_config_to_path(
     let existing = std::fs::read_to_string(config_path).unwrap_or_default();
     let backup_path = backup_existing_config(config_path, &existing)?;
     let updated = upsert_relay_provider_config(&existing, base_url, bearer_token);
+    std::fs::write(config_path, updated)
+        .with_context(|| format!("failed to write {}", config_path.display()))?;
+
+    let status = relay_provider_config_from_path(config_path);
+    Ok(RelayApplyResult {
+        config_path: status.config_path,
+        backup_path: backup_path.map(|path| path.to_string_lossy().to_string()),
+        configured: status.configured,
+    })
+}
+
+pub fn apply_api_provider_config_to_path(
+    config_path: &Path,
+    base_url: &str,
+    bearer_token: &str,
+) -> anyhow::Result<RelayApplyResult> {
+    let base_url = base_url.trim();
+    if base_url.is_empty() {
+        anyhow::bail!("API Base URL cannot be empty");
+    }
+    let bearer_token = bearer_token.trim();
+    if bearer_token.is_empty() {
+        anyhow::bail!("API key cannot be empty");
+    }
+
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+
+    let existing = std::fs::read_to_string(config_path).unwrap_or_default();
+    let backup_path = backup_existing_config(config_path, &existing)?;
+    let updated = upsert_api_provider_config(&existing, base_url, bearer_token);
     std::fs::write(config_path, updated)
         .with_context(|| format!("failed to write {}", config_path.display()))?;
 
@@ -195,6 +240,14 @@ fn relay_provider_config_from_contents(
         .as_ref()
         .and_then(|values| values.get("experimental_bearer_token"))
         .map(|value| !unquote_toml_string(value).trim().is_empty())
+        .unwrap_or(false)
+        || root_key_string(contents, "OPENAI_API_KEY")
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false);
+    let has_experimental_bearer_token = provider
+        .as_ref()
+        .and_then(|values| values.get("experimental_bearer_token"))
+        .map(|value| !unquote_toml_string(value).trim().is_empty())
         .unwrap_or(false);
     let base_url = provider
         .as_ref()
@@ -202,11 +255,22 @@ fn relay_provider_config_from_contents(
         .map(|value| unquote_toml_string(value))
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-    let configured = active && requires_openai_auth && has_bearer_token && base_url.is_some();
+    let mode = if active && requires_openai_auth {
+        "hybridApi"
+    } else if active && base_url.is_some() && has_bearer_token {
+        "api"
+    } else {
+        "official"
+    };
+    let configured = active
+        && base_url.is_some()
+        && ((requires_openai_auth && has_experimental_bearer_token)
+            || (!requires_openai_auth && has_bearer_token));
 
     RelayProviderConfig {
         provider: RELAY_PROVIDER.to_string(),
         active,
+        mode: mode.to_string(),
         configured,
         authenticated: auth.authenticated,
         account_label: auth.account_label,
@@ -335,6 +399,7 @@ fn upsert_relay_provider_config(contents: &str, base_url: &str, bearer_token: &s
         )],
     );
     updated = remove_table(&updated, &format!("model_providers.{RELAY_PROVIDER}"));
+    updated = remove_root_key(&updated, "OPENAI_API_KEY");
 
     let mut lines = updated.lines().map(ToString::to_string).collect::<Vec<_>>();
     let insert_at = first_non_provider_table_index(&lines).unwrap_or(lines.len());
@@ -348,6 +413,36 @@ fn upsert_relay_provider_config(contents: &str, base_url: &str, bearer_token: &s
             "experimental_bearer_token = \"{}\"",
             toml_escape(bearer_token)
         ),
+        String::new(),
+    ];
+    lines.splice(insert_at..insert_at, provider_lines);
+    finish_lines(lines)
+}
+
+fn upsert_api_provider_config(contents: &str, base_url: &str, bearer_token: &str) -> String {
+    let mut updated = upsert_root_keys(
+        contents,
+        &[
+            (
+                "model_provider",
+                format!("\"{}\"", toml_escape(RELAY_PROVIDER)),
+            ),
+            (
+                "OPENAI_API_KEY",
+                format!("\"{}\"", toml_escape(bearer_token)),
+            ),
+        ],
+    );
+    updated = remove_table(&updated, &format!("model_providers.{RELAY_PROVIDER}"));
+
+    let mut lines = updated.lines().map(ToString::to_string).collect::<Vec<_>>();
+    let insert_at = first_non_provider_table_index(&lines).unwrap_or(lines.len());
+    let provider_lines = vec![
+        format!("[model_providers.{RELAY_PROVIDER}]"),
+        format!("name = \"{}\"", toml_escape(RELAY_PROVIDER)),
+        "wire_api = \"responses\"".to_string(),
+        "env_key = \"OPENAI_API_KEY\"".to_string(),
+        format!("base_url = \"{}\"", toml_escape(base_url)),
         String::new(),
     ];
     lines.splice(insert_at..insert_at, provider_lines);
@@ -532,6 +627,7 @@ experimental_bearer_token = "sk-test"
 
         assert!(status.active);
         assert!(status.configured);
+        assert_eq!(status.mode, "hybridApi");
         assert!(status.authenticated);
         assert_eq!(status.account_label.as_deref(), Some("user@example.com"));
         assert!(status.requires_openai_auth);
@@ -562,6 +658,7 @@ base_url = "http://127.0.0.1:8000"
         assert!(updated.contains("# keep this"));
         assert!(updated.contains("model = \"gpt-5\""));
         assert!(updated.contains("model_provider = \"CodexPilot\""));
+        assert!(!updated.contains("OPENAI_API_KEY"));
         assert!(updated.contains("[model_providers.CodexPilot]"));
         assert!(updated.contains("wire_api = \"responses\""));
         assert!(updated.contains("requires_openai_auth = true"));
@@ -571,6 +668,70 @@ base_url = "http://127.0.0.1:8000"
         assert!(updated.contains("[mcp_servers.local]"));
         assert!(updated.contains("base_url = \"http://127.0.0.1:8000\""));
         assert!(!updated.contains("https://old.example/v1"));
+    }
+
+    #[test]
+    fn apply_api_provider_writes_openai_api_key_provider() {
+        let contents = r#"# keep this
+model = "gpt-5"
+model_provider = "chatgpt"
+OPENAI_API_KEY = "old"
+
+[model_providers.CodexPilot]
+name = "old"
+requires_openai_auth = true
+base_url = "https://old.example/v1"
+
+[mcp_servers.local]
+base_url = "http://127.0.0.1:8000"
+"#;
+
+        let updated = upsert_api_provider_config(contents, "https://api.example/v1", "sk-api");
+
+        assert!(updated.contains("# keep this"));
+        assert!(updated.contains("model = \"gpt-5\""));
+        assert!(updated.contains("model_provider = \"CodexPilot\""));
+        assert!(updated.contains("OPENAI_API_KEY = \"sk-api\""));
+        assert!(updated.contains("[model_providers.CodexPilot]"));
+        assert!(updated.contains("wire_api = \"responses\""));
+        assert!(updated.contains("env_key = \"OPENAI_API_KEY\""));
+        assert!(updated.contains("base_url = \"https://api.example/v1\""));
+        assert!(!updated.contains("requires_openai_auth"));
+        assert!(!updated.contains("experimental_bearer_token"));
+        assert!(!updated.contains("https://old.example/v1"));
+        assert!(updated.contains("[mcp_servers.local]"));
+    }
+
+    #[test]
+    fn reads_active_api_provider_config() {
+        let contents = r#"model_provider = "CodexPilot"
+OPENAI_API_KEY = "sk-api"
+
+[model_providers.CodexPilot]
+name = "CodexPilot"
+wire_api = "responses"
+env_key = "OPENAI_API_KEY"
+base_url = "https://api.example/v1"
+"#;
+
+        let status = relay_provider_config_from_contents(
+            contents,
+            Path::new("/tmp/config.toml"),
+            ChatGptAuthStatus {
+                authenticated: false,
+                source: String::new(),
+                account_label: None,
+                message: "未检测到 ChatGPT 登录状态，请先在 Codex 中完成官方登录。".to_string(),
+            },
+        );
+
+        assert!(status.active);
+        assert!(status.configured);
+        assert_eq!(status.mode, "api");
+        assert!(!status.authenticated);
+        assert!(!status.requires_openai_auth);
+        assert!(status.has_bearer_token);
+        assert_eq!(status.base_url.as_deref(), Some("https://api.example/v1"));
     }
 
     #[test]

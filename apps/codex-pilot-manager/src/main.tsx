@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
-  AlertTriangle,
+  BadgeCheck,
   Bot,
   CheckCircle2,
   Clipboard,
@@ -19,7 +19,10 @@ import {
   Terminal,
   Eye,
   EyeOff,
+  Network,
   RotateCcw,
+  Plus,
+  X,
 } from "lucide-react";
 import "./styles.css";
 
@@ -46,6 +49,7 @@ type LaunchSnapshot = {
 
 type ProviderSnapshot = {
   activeProvider: string;
+  mode: RunMode;
   profile: string;
   source: string;
   authPath: string;
@@ -61,7 +65,11 @@ type ProviderProfile = {
   name: string;
   baseUrl: string;
   bearerToken: string;
+  mode: ProviderProfileMode;
 };
+
+type RunMode = "official" | "hybridApi" | "api";
+type ProviderProfileMode = "hybridApi" | "api";
 
 type DiagnosticCheck = {
   name: string;
@@ -94,9 +102,9 @@ type ViewId = "overview" | "launch" | "provider" | "sessions" | "diagnostics";
 
 const views: Array<{ id: ViewId; label: string; icon: React.ElementType }> = [
   { id: "overview", label: "总览", icon: Activity },
-  { id: "launch", label: "启动与注入", icon: Terminal },
-  { id: "provider", label: "中转", icon: LogIn },
-  { id: "sessions", label: "会话维护", icon: History },
+  { id: "launch", label: "启动", icon: Terminal },
+  { id: "provider", label: "模型通道", icon: LogIn },
+  { id: "sessions", label: "回收站", icon: History },
   { id: "diagnostics", label: "诊断", icon: Stethoscope },
 ];
 
@@ -105,9 +113,16 @@ function canRunLaunchAction(launch: LaunchSnapshot | null): boolean {
   return ["launch", "reinject", "restart", "running"].includes(launch.actionKind);
 }
 
+function backendStatusLabel(status: BackendStatus | null): string {
+  if (!status) return "未连接";
+  if (status.status === "running") return "已连接";
+  return status.status || "未连接";
+}
+
 function App() {
   const [activeView, setActiveView] = React.useState<ViewId>("overview");
   const [status, setStatus] = React.useState<BackendStatus | null>(null);
+  const [appVersion, setAppVersion] = React.useState<string | null>(null);
   const [launch, setLaunch] = React.useState<LaunchSnapshot | null>(null);
   const [provider, setProvider] = React.useState<ProviderSnapshot | null>(null);
   const [recycleBin, setRecycleBin] = React.useState<RecycleBinSnapshot | null>(null);
@@ -128,8 +143,8 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const refresh = React.useCallback(() => {
-    notify("正在刷新");
+  const refresh = React.useCallback((silent = false) => {
+    if (!silent) notify("正在刷新");
     Promise.all([
       invoke<BackendStatus | null>("backend_status")
         .then(setStatus)
@@ -146,12 +161,34 @@ function App() {
       invoke<DiagnosticsSnapshot>("diagnostics_snapshot")
         .then(setDiagnostics)
         .catch(() => setDiagnostics(null)),
-    ]).finally(() => notify("已更新"));
+    ]).finally(() => {
+      if (!silent) notify("已更新");
+    });
   }, [notify]);
 
   React.useEffect(() => {
     refresh();
   }, [refresh]);
+
+  React.useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        refresh(true);
+      }
+    };
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refresh]);
+
+  React.useEffect(() => {
+    invoke<string>("app_version")
+      .then(setAppVersion)
+      .catch(() => setAppVersion(null));
+  }, []);
 
   const handleLaunch = () => {
     if (launching) return;
@@ -226,29 +263,30 @@ function App() {
           </div>
           <div className="headerActions">
             <span className="message">{message}</span>
-            <button className="secondary iconButton" onClick={refresh} title="刷新" type="button">
+            <button className="secondary iconButton" onClick={() => refresh()} title="刷新" type="button">
               <RefreshCw size={16} />
             </button>
-            <button className="primary" disabled={launching || !canRunLaunchAction(launch)} onClick={handleLaunch} type="button">
-              <Play size={16} />
-              {launching ? "处理中" : launch?.actionLabel ?? "启动"}
-            </button>
+            {(activeView === "overview" || activeView === "launch") && (
+              <button className="primary" disabled={launching || !canRunLaunchAction(launch)} onClick={handleLaunch} type="button">
+                {launch?.actionKind === "reinject" || launch?.actionKind === "restart" ? <RotateCcw size={16} /> : <Play size={16} />}
+                {launching ? "处理中" : launch?.actionLabel ?? "启动 Codex"}
+              </button>
+            )}
           </div>
         </header>
 
         {activeView === "overview" && (
           <OverviewView
             status={status}
+            appVersion={appVersion}
             launch={launch}
             provider={provider}
             recycleBin={recycleBin}
             diagnostics={diagnostics}
-            launching={launching}
-            onLaunch={handleLaunch}
             onNavigate={setActiveView}
           />
         )}
-        {activeView === "launch" && <LaunchView status={status} launch={launch} launching={launching} onLaunch={handleLaunch} onRefresh={refresh} />}
+        {activeView === "launch" && <LaunchView status={status} launch={launch} onRefresh={refresh} />}
         {activeView === "provider" && (
           <ProviderView
             provider={provider}
@@ -286,29 +324,28 @@ function App() {
 
 function OverviewView({
   status,
+  appVersion,
   launch,
   provider,
   recycleBin,
   diagnostics,
-  launching,
-  onLaunch,
   onNavigate,
 }: {
   status: BackendStatus | null;
+  appVersion: string | null;
   launch: LaunchSnapshot | null;
   provider: ProviderSnapshot | null;
   recycleBin: RecycleBinSnapshot | null;
   diagnostics: DiagnosticsSnapshot | null;
-  launching: boolean;
-  onLaunch: () => void;
   onNavigate: (view: ViewId) => void;
 }) {
   const deletedCount = recycleBin?.entries.length ?? 0;
   const recoverableCount = recycleBin?.entries.filter((entry) => entry.recoverable).length ?? 0;
   const diagnosticsChecks = diagnostics?.checks ?? [];
   const failingChecks = diagnosticsChecks.filter((check) => !["ok", "pass", "passed"].includes(check.status)).length;
-  const backendState = status?.status ?? "未启动";
-  const providerMode = provider?.configured ? "中转模式" : "官方登录";
+  const backendState = backendStatusLabel(status);
+  const providerMode = runModeLabel(provider?.mode ?? "official");
+  const displayVersion = appVersion ?? status?.version ?? "未知";
 
   return (
     <div className="taskStack">
@@ -318,16 +355,13 @@ function OverviewView({
             <Terminal size={16} />
             <h2>启动就绪</h2>
           </div>
-          <button className="primary" disabled={launching || !canRunLaunchAction(launch)} onClick={onLaunch} type="button">
-            <Play size={16} />
-            {launching ? "处理中" : launch?.actionLabel ?? "启动 Codex"}
-          </button>
         </div>
         <dl className="metricGrid overviewMetrics">
           <Metric label="后端" value={backendState} />
           <Metric label="Codex 应用" value={launch?.appPath ? "已发现" : "未发现"} />
           <Metric label="调试端口" value={String(launch?.debugPort ?? "-")} />
           <Metric label="后端端口" value={String(launch?.helperPort ?? "-")} />
+          <Metric label="版本" value={displayVersion} />
         </dl>
         <div className="taskFooter">
           <span className={`statusDot ${canRunLaunchAction(launch) ? "ok" : "warning"}`} />
@@ -340,12 +374,12 @@ function OverviewView({
         <div className="taskHeader">
           <div className="panelTitle compactTitle">
             <LogIn size={16} />
-            <h2>中转状态</h2>
+            <h2>模型通道</h2>
           </div>
-          <button className="secondary" onClick={() => onNavigate("provider")} type="button">配置中转</button>
+          <button className="secondary" onClick={() => onNavigate("provider")} type="button">选择通道</button>
         </div>
         <dl className="metricGrid overviewMetrics">
-          <Metric label="模式" value={providerMode} />
+          <Metric label="通道" value={providerMode} />
           <Metric label="官方登录" value={provider?.authenticated ? "已检测" : "未检测"} />
           <Metric label="当前供应商" value={provider?.activeProvider ?? "未知"} />
           <Metric label="配置档" value={provider?.profile ?? "默认"} />
@@ -360,7 +394,7 @@ function OverviewView({
         <div className="taskHeader">
           <div className="panelTitle compactTitle">
             <Trash2 size={16} />
-            <h2>会话维护</h2>
+            <h2>回收站</h2>
           </div>
           <button className="secondary" onClick={() => onNavigate("sessions")} type="button">打开回收站</button>
         </div>
@@ -381,7 +415,6 @@ function OverviewView({
         <dl className="metricGrid overviewMetrics">
           <Metric label="检查项" value={`${diagnosticsChecks.length} 项`} />
           <Metric label="需关注" value={`${failingChecks} 项`} />
-          <Metric label="版本" value={status?.version ?? "0.1.0"} />
         </dl>
       </section>
     </div>
@@ -391,21 +424,18 @@ function OverviewView({
 function LaunchView({
   status,
   launch,
-  launching,
-  onLaunch,
   onRefresh,
 }: {
   status: BackendStatus | null;
   launch: LaunchSnapshot | null;
-  launching: boolean;
-  onLaunch: () => void;
   onRefresh: () => void;
 }) {
   const [appPath, setAppPath] = React.useState("");
   const [debugPort, setDebugPort] = React.useState("9688");
   const [helperPort, setHelperPort] = React.useState("58888");
   const [saveMessage, setSaveMessage] = React.useState("");
-  const state = status?.status ?? "未启动";
+  const backendState = backendStatusLabel(status);
+  const connectionState = launch?.debugReachable ? "可直接注入" : launch?.codexRunning ? "需要重启注入" : "可启动";
 
   React.useEffect(() => {
     if (!launch) return;
@@ -451,17 +481,12 @@ function LaunchView({
             <Gauge size={16} />
             <h2>启动状态</h2>
           </div>
-          <button className="primary" disabled={launching || !canRunLaunchAction(launch)} onClick={onLaunch} type="button">
-            {launch?.actionKind === "reinject" || launch?.actionKind === "restart" ? <RotateCcw size={16} /> : <Play size={16} />}
-            {launching ? "处理中" : launch?.actionLabel ?? "启动"}
-          </button>
         </div>
         <dl className="metricGrid overviewMetrics">
-          <Metric label="后端" value={state} />
-          <Metric label="版本" value={status?.version ?? "0.1.0"} />
-          <Metric label="启动状态" value={launch?.state ?? "空闲"} />
-          <Metric label="动作" value={launch?.actionLabel ?? (launch?.ready ? "启动" : "不可启动")} />
+          <Metric label="后端" value={backendState} />
           <Metric label="Codex" value={launch?.codexRunning ? "已运行" : "未检测"} />
+          <Metric label="连接方式" value={connectionState} />
+          <Metric label="调试端口" value={String(launch?.debugPort ?? "-")} />
         </dl>
       </section>
 
@@ -540,33 +565,67 @@ function ProviderView({
   const profiles = provider?.profiles ?? [];
   const activeProfileId = provider?.activeProfileId || profiles[0]?.id || "";
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? profiles[0] ?? null;
+  const snapshotMode = provider?.mode ?? "official";
+  const [selectedChannel, setSelectedChannel] = React.useState<"official" | "hybridApi">(
+    snapshotMode === "official" ? "official" : "hybridApi"
+  );
+  const customChannelSelected = selectedChannel === "hybridApi";
   const [editingId, setEditingId] = React.useState("");
   const [profileName, setProfileName] = React.useState("");
   const [baseUrl, setBaseUrl] = React.useState("");
   const [bearerToken, setBearerToken] = React.useState("");
   const [showToken, setShowToken] = React.useState(false);
   const [pendingAction, setPendingAction] = React.useState("");
+  const currentMode = snapshotMode;
 
   React.useEffect(() => {
-    if (!activeProfile) return;
+    setSelectedChannel(snapshotMode === "official" ? "official" : "hybridApi");
+  }, [snapshotMode]);
+
+  React.useEffect(() => {
+    if (!activeProfile || editingId === "") return;
     setEditingId(activeProfile.id);
     setProfileName(activeProfile.name);
     setBaseUrl(activeProfile.baseUrl);
     setBearerToken(activeProfile.bearerToken);
-  }, [activeProfile?.id]);
+  }, [activeProfile?.id, editingId]);
 
-  const apply = () => {
+  const saveMixedRelay = () => {
     if (pendingAction) return;
-    setPendingAction("apply");
-    onProgress("正在写入中转并同步历史会话");
-    onMessage("正在写入当前中转");
-    invoke<string>("apply_provider", {
+    if (!profileName.trim() || !baseUrl.trim() || !bearerToken.trim()) {
+      onMessage("名称、Base URL 和 Key 不能为空");
+      return;
+    }
+    setPendingAction("save");
+    onProgress("正在保存混合中转");
+    onMessage("正在保存混合中转");
+    const savingExistingProfile = Boolean(editingId);
+    invoke<string>("save_provider_profile", {
       request: {
-        profileId: editingId || activeProfileId,
+        id: editingId || null,
+        name: profileName,
+        baseUrl,
+        bearerToken,
+        mode: "hybridApi",
+        activate: true,
       },
     })
-      .then((message) => {
-        onMessage(message);
+      .then((saveMessage) => {
+        if (!savingExistingProfile) {
+          onMessage(saveMessage);
+          onRefresh();
+          return null;
+        }
+        return invoke<string>("apply_provider", {
+          request: {
+            profileId: editingId,
+            mode: "hybridApi",
+          },
+        });
+      })
+      .then((applyMessage) => {
+        if (!applyMessage) return;
+        onMessage(applyMessage);
         onRefresh();
       })
       .catch((error) => onMessage(String(error)))
@@ -574,27 +633,6 @@ function ProviderView({
         setPendingAction("");
         onProgress("");
       });
-  };
-
-  const saveProfile = (activate = true) => {
-    if (!profileName.trim() || !baseUrl.trim() || !bearerToken.trim()) {
-      onMessage("名称、Base URL 和 Key 不能为空");
-      return;
-    }
-    invoke<string>("save_provider_profile", {
-      request: {
-        id: editingId || null,
-        name: profileName,
-        baseUrl,
-        bearerToken,
-        activate,
-      },
-    })
-      .then((message) => {
-        onMessage(message);
-        onRefresh();
-      })
-      .catch((error) => onMessage(String(error)));
   };
 
   const newProfile = () => {
@@ -626,6 +664,7 @@ function ProviderView({
     invoke<string>("delete_provider_profile", { request: { id: editingId } })
       .then((message) => {
         onMessage(message);
+        setEditingId("");
         onRefresh();
       })
       .catch((error) => onMessage(String(error)));
@@ -634,8 +673,8 @@ function ProviderView({
   const clear = () => {
     if (pendingAction) return;
     setPendingAction("clear");
-    onProgress("正在切回官方登录模式");
-    onMessage("正在切回官方登录模式");
+    onProgress("正在保存官方通道");
+    onMessage("正在保存官方通道");
     invoke<string>("clear_provider")
       .then((message) => {
         onMessage(message);
@@ -648,126 +687,171 @@ function ProviderView({
       });
   };
 
-  const syncSessions = () => {
-    if (pendingAction) return;
-    setPendingAction("sync");
-    onProgress("正在同步历史会话");
-    onMessage("正在同步历史会话");
-    invoke<string>("sync_provider_sessions")
-      .then((message) => {
-        onMessage(message);
-        onRefresh();
-      })
-      .catch((error) => onMessage(String(error)))
-      .finally(() => {
-        setPendingAction("");
-        onProgress("");
-      });
+  const saveOfficialChannel = () => {
+    clear();
   };
 
   return (
     <div className="providerLayout">
-      <section className="panel widePanel loginControl">
-        <div className="loginControlHeader">
+      <section className="panel widePanel statusPanel">
+        <div className="panelHeader">
+          <div className="panelTitle compactTitle">
+            <CheckCircle2 size={16} />
+            <h2>当前状态</h2>
+          </div>
+          <code>{provider?.source ?? "~/.codex/config.toml"}</code>
+        </div>
+        <div className="providerStatusGrid">
+          <Metric label="官方登录" value={provider?.authenticated ? `已检测${provider.accountLabel ? ` ${provider.accountLabel}` : ""}` : "未检测"} />
+          <Metric label="当前通道" value={runModeLabel(currentMode)} />
+          <Metric label="当前供应商" value={provider?.activeProvider ?? "未知"} />
+          <Metric label="配置档" value={provider?.profile ?? "默认"} />
+          <Metric label="已配置" value={provider?.configured ? "是" : "否"} />
+        </div>
+      </section>
+
+      <section className="panel widePanel modePanel">
+        <div className="panelHeader">
           <div className="panelTitle compactTitle">
             <LogIn size={16} />
-            <h2>官方登录与中转写入</h2>
+            <h2>选择通道</h2>
           </div>
           <code>{provider?.authPath ?? "~/.codex/auth.json"}</code>
         </div>
-        <div className="loginControlBody">
-          <div className="providerSummary">
-            <div className="loginStatus">
-              <span className={`statusDot ${provider?.authenticated ? "ok" : "warning"}`} />
-              <strong>{provider?.authenticated ? "已检测到官方登录" : "未检测到官方登录"}</strong>
-              <span>{provider?.accountLabel ?? "未读取到账号信息"}</span>
-            </div>
-            <div className="summaryMeta">
-              <span>当前供应商：{provider?.activeProvider ?? "未知"}</span>
-              <span>配置档：{provider?.profile ?? "默认"}</span>
-              <span>已配置：{provider?.configured ? "是" : "否"}</span>
-            </div>
-          </div>
-          <div className="buttonRow">
-            <button className="secondary" disabled={Boolean(pendingAction)} onClick={onRefresh} type="button">检测登录</button>
-            <button className="secondary" disabled={Boolean(pendingAction)} onClick={clear} type="button">
-              {pendingAction === "clear" ? "切换中" : "切回官方登录模式"}
-            </button>
-            <button className="secondary" disabled={Boolean(pendingAction)} onClick={syncSessions} type="button">
-              {pendingAction === "sync" ? "同步中" : "同步历史会话"}
-            </button>
-            <button className="primary" disabled={Boolean(pendingAction)} onClick={apply} type="button">
-              {pendingAction === "apply" ? "写入中" : "写入当前中转"}
-            </button>
-          </div>
+        <div className="modeGrid">
+          <ModeCard
+            active={currentMode === "official"}
+            description="使用 Codex/ChatGPT 官方登录，不写入自定义模型供应商。"
+            disabled={Boolean(pendingAction)}
+            icon={BadgeCheck}
+            onClick={() => setSelectedChannel("official")}
+            title="官方通道"
+          />
+          <ModeCard
+            active={customChannelSelected}
+            description="保留 Codex/ChatGPT 登录，把模型请求转到当前 API 配置。"
+            disabled={Boolean(pendingAction)}
+            icon={Network}
+            onClick={() => setSelectedChannel("hybridApi")}
+            title="混合中转"
+          />
         </div>
       </section>
-      <section className="panel profilePanel">
-        <div className="panelTitle">
-          <Settings size={16} />
-          <h2>配置档</h2>
-        </div>
-        <div className="profileList">
-          {profiles.map((profile) => (
-            <button
-              className={`profileItem ${profile.id === activeProfileId ? "active" : ""}`}
-              key={profile.id}
-              onClick={() => selectProfile(profile)}
-              type="button"
-            >
-              <strong>{profile.name}</strong>
-              <span>{profile.baseUrl || "未填写 Base URL"}</span>
-            </button>
-          ))}
-          {!profiles.length && <p className="bodyText">暂无配置档。</p>}
-        </div>
-        <div className="buttonRow profileActions">
-          <button className="secondary" onClick={newProfile} type="button">新增配置</button>
-          <button className="secondary" onClick={deleteProfile} type="button">删除当前</button>
-        </div>
-      </section>
-      <section className="panel editorPanel">
-        <div className="panelTitle">
-          <AlertTriangle size={16} />
-          <h2>编辑并应用</h2>
-        </div>
-        <p className="formHint">配置来源：{provider?.source ?? "未检测到配置文件"}</p>
-        <div className="formStack">
-          <label>
-            <span>配置名称</span>
-            <input value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="默认中转" />
-          </label>
-          <label>
-            <span>Base URL</span>
-            <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://example.com/v1" />
-          </label>
-          <label>
-            <span>API Key</span>
-            <div className="inputWithButton">
-              <input
-                value={bearerToken}
-                onChange={(event) => setBearerToken(event.target.value)}
-                placeholder="sk-..."
-                type={showToken ? "text" : "password"}
-              />
-              <button className="secondary iconButton" onClick={() => setShowToken((value) => !value)} title={showToken ? "隐藏" : "显示"} type="button">
-                {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </label>
-          <div className="buttonRow">
-            <button className="secondary" onClick={() => saveProfile(true)} type="button">保存配置</button>
-            <button className="primary" disabled={Boolean(pendingAction)} onClick={apply} type="button">
-              {pendingAction === "apply" ? "应用中" : "应用中转"}
-            </button>
-            <button className="secondary" disabled={Boolean(pendingAction)} onClick={clear} type="button">
-              {pendingAction === "clear" ? "清除中" : "清除中转"}
+
+      {customChannelSelected ? (
+        <section className="panel widePanel profilePanel">
+          <div className="panelTitle">
+            <Network size={16} />
+            <h2>配置档</h2>
+          </div>
+          <div className="profileList">
+            {(profiles.length ? profiles : [{ id: "", name: profileName || "新中转", baseUrl, bearerToken, mode: "hybridApi" as ProviderProfileMode }]).map((profile) => {
+              const selected = profile.id === activeProfileId || (!profile.id && !editingId);
+              return (
+                <div className={`profileItem ${selected ? "active" : ""}`} key={profile.id || "new"}>
+                  <button className="profileDelete" onClick={deleteProfile} title="删除配置" type="button">
+                    <X size={14} />
+                  </button>
+                  <button className="profileSelectArea" onClick={() => profile.id && selectProfile(profile)} type="button">
+                    <strong>{profile.name || "新中转"}</strong>
+                    <span>{selected ? "当前应用中 · 混合中转" : `混合中转 · ${profile.baseUrl || "未填写 Base URL"}`}</span>
+                  </button>
+                  {selected && (
+                    <>
+                      <div className="profileFormGrid">
+                        <label>
+                          <span>配置名称</span>
+                          <input value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="默认中转" />
+                        </label>
+                        <label>
+                          <span>Base URL</span>
+                          <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://example.com/v1" />
+                        </label>
+                        <label>
+                          <span>API Key</span>
+                          <div className="inputWithButton">
+                            <input
+                              value={bearerToken}
+                              onChange={(event) => setBearerToken(event.target.value)}
+                              placeholder="sk-..."
+                              type={showToken ? "text" : "password"}
+                            />
+                            <button className="secondary iconButton" onClick={() => setShowToken((value) => !value)} title={showToken ? "隐藏" : "显示"} type="button">
+                              {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                          </div>
+                        </label>
+                      </div>
+                      <div className="profileSaveRow">
+                        <button className="primary" disabled={Boolean(pendingAction)} onClick={saveMixedRelay} type="button">
+                          {pendingAction === "save" ? "保存中" : "保存"}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+            <button className="addProfile" onClick={newProfile} title="新增配置" type="button">
+              <Plus size={18} />
             </button>
           </div>
-        </div>
-      </section>
-    </div>
+        </section>
+      ) : (
+        <section className="panel widePanel officialPanel">
+          <div className="panelTitle">
+            <BadgeCheck size={16} />
+            <h2>官方通道</h2>
+          </div>
+          <div className="officialBox">
+            <strong>使用 Codex/ChatGPT 官方登录</strong>
+            <span>不会写入 CodexPilot 模型供应商，也不会使用自定义 API 配置。</span>
+          </div>
+          <div className="profileSaveRow">
+            <button className="primary" disabled={Boolean(pendingAction)} onClick={saveOfficialChannel} type="button">
+              {pendingAction === "clear" ? "保存中" : "保存"}
+            </button>
+          </div>
+        </section>
+      )}
+            </div>
   );
+}
+
+function ModeCard({
+  active,
+  description,
+  disabled,
+  icon: Icon,
+  onClick,
+  title,
+}: {
+  active: boolean;
+  description: string;
+  disabled: boolean;
+  icon: React.ElementType;
+  onClick: () => void;
+  title: string;
+}) {
+  return (
+    <button
+      className={`modeCard ${active ? "active" : ""}`}
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="modeIcon">
+        <Icon size={18} />
+      </span>
+      <strong>{title}</strong>
+      <span>{description}</span>
+    </button>
+  );
+}
+
+function runModeLabel(mode: RunMode): string {
+  if (mode === "hybridApi" || mode === "api") return "混合中转";
+  return "官方通道";
 }
 
 function RecycleBinView({

@@ -3,6 +3,7 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Mutex;
+use tauri::Manager;
 
 struct ManagerState {
     launch_state: Mutex<LaunchState>,
@@ -57,6 +58,7 @@ impl Default for LaunchPreferences {
 #[serde(rename_all = "camelCase")]
 struct ProviderSnapshot {
     active_provider: String,
+    mode: String,
     profile: String,
     source: String,
     auth_path: String,
@@ -92,6 +94,27 @@ struct RecycleBinSnapshot {
 #[serde(rename_all = "camelCase")]
 struct ProviderApplyRequest {
     profile_id: Option<String>,
+    mode: Option<ProviderProfileMode>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+enum ProviderProfileMode {
+    HybridApi,
+    Api,
+}
+
+impl ProviderProfileMode {
+    fn label(self) -> &'static str {
+        match self {
+            ProviderProfileMode::HybridApi => "混合 API",
+            ProviderProfileMode::Api => "纯 API",
+        }
+    }
+}
+
+fn default_provider_profile_mode() -> ProviderProfileMode {
+    ProviderProfileMode::HybridApi
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -101,6 +124,8 @@ struct ProviderProfile {
     name: String,
     base_url: String,
     bearer_token: String,
+    #[serde(default = "default_provider_profile_mode")]
+    mode: ProviderProfileMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +144,7 @@ impl Default for ProviderProfilesState {
                 name: "默认中转".to_string(),
                 base_url: String::new(),
                 bearer_token: String::new(),
+                mode: ProviderProfileMode::HybridApi,
             }],
         }
     }
@@ -131,6 +157,7 @@ struct ProviderProfileSaveRequest {
     name: String,
     base_url: String,
     bearer_token: String,
+    mode: ProviderProfileMode,
     activate: bool,
 }
 
@@ -149,6 +176,11 @@ struct RecycleBinTokensRequest {
 #[tauri::command]
 fn backend_status() -> Result<Option<codex_pilot_core::status::BackendStatus>, String> {
     codex_pilot_core::status::read_status().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn app_version() -> String {
+    codex_pilot_core::version::VERSION.to_string()
 }
 
 #[tauri::command]
@@ -324,6 +356,11 @@ fn provider_snapshot() -> ProviderSnapshot {
         } else {
             "chatgpt".to_string()
         },
+        mode: if provider.active {
+            provider.mode
+        } else {
+            "official".to_string()
+        },
         profile: active_profile
             .map(|profile| profile.name.clone())
             .unwrap_or_else(|| "默认中转".to_string()),
@@ -345,10 +382,21 @@ async fn apply_provider(request: ProviderApplyRequest) -> Result<String, String>
     let profile = profile_by_id(&profiles, request.profile_id.as_deref())?;
     let base_url = profile.base_url;
     let bearer_token = profile.bearer_token;
+    let mode = request.mode.unwrap_or(profile.mode);
     tauri::async_runtime::spawn_blocking(move || {
-        let result =
-            codex_pilot_core::relay_config::apply_relay_provider_config(&base_url, &bearer_token)
-                .map_err(|error| format!("应用中转失败：{error}"))?;
+        let result = match mode {
+            ProviderProfileMode::HybridApi => {
+                codex_pilot_core::relay_config::apply_relay_provider_config(
+                    &base_url,
+                    &bearer_token,
+                )
+                .map_err(|error| format!("应用混合 API 失败：{error}"))?
+            }
+            ProviderProfileMode::Api => {
+                codex_pilot_core::relay_config::apply_api_provider_config(&base_url, &bearer_token)
+                    .map_err(|error| format!("应用纯 API 失败：{error}"))?
+            }
+        };
         let sync = codex_pilot_data::provider_sync::run_provider_sync(None);
         let sync_detail = format!(
             "Provider Sync：{}，会话文件 {} 个，数据库行 {} 条。",
@@ -356,11 +404,11 @@ async fn apply_provider(request: ProviderApplyRequest) -> Result<String, String>
         );
         Ok(result
             .backup_path
-            .map(|path| format!("中转已应用，备份：{path}。{sync_detail}"))
-            .unwrap_or_else(|| format!("中转已应用。{sync_detail}")))
+            .map(|path| format!("{} 已应用，备份：{path}。{sync_detail}", mode.label()))
+            .unwrap_or_else(|| format!("{} 已应用。{sync_detail}", mode.label())))
     })
     .await
-    .map_err(|error| format!("应用中转任务失败：{error}"))?
+    .map_err(|error| format!("应用运行模式任务失败：{error}"))?
 }
 
 #[tauri::command]
@@ -581,11 +629,17 @@ fn collect_diagnostics(state: tauri::State<'_, ManagerState>) -> Result<String, 
 }
 
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .manage(ManagerState {
             launch_state: Mutex::new(LaunchState::Idle),
         })
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                hide_main_window_on_close(window, event);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
+            app_version,
             backend_status,
             launch_snapshot,
             launch_codex,
@@ -605,8 +659,32 @@ pub fn run() {
             diagnostics_snapshot,
             collect_diagnostics
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running CodexPilot Manager");
+        .build(tauri::generate_context!())
+        .expect("error while building CodexPilot Manager");
+
+    app.run(|handle, event| {
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = event {
+            show_main_window(handle);
+        }
+    });
+}
+
+fn hide_main_window_on_close<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
+    event: &tauri::WindowEvent,
+) {
+    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        api.prevent_close();
+        let _ = window.hide();
+    }
+}
+
+fn show_main_window<R: tauri::Runtime>(handle: &tauri::AppHandle<R>) {
+    if let Some(window) = handle.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 fn launch_state_label(state: &LaunchState) -> String {
@@ -942,6 +1020,7 @@ fn sanitize_provider_profile(
     let name = request.name.trim().to_string();
     let base_url = request.base_url.trim().to_string();
     let bearer_token = request.bearer_token.trim().to_string();
+    let mode = request.mode;
     if name.is_empty() {
         return Err("配置档名称不能为空。".to_string());
     }
@@ -956,6 +1035,7 @@ fn sanitize_provider_profile(
         name,
         base_url,
         bearer_token,
+        mode,
     })
 }
 
@@ -970,6 +1050,7 @@ fn sanitize_provider_profiles_state(
             name: profile.name.trim().to_string(),
             base_url: profile.base_url.trim().to_string(),
             bearer_token: profile.bearer_token.trim().to_string(),
+            mode: profile.mode,
         })
         .filter(|profile| !profile.id.is_empty() && !profile.name.is_empty())
         .collect();
@@ -1161,12 +1242,14 @@ mod tests {
                     name: "配置一".to_string(),
                     base_url: "https://one.example/v1".to_string(),
                     bearer_token: "sk-one".to_string(),
+                    mode: ProviderProfileMode::HybridApi,
                 },
                 ProviderProfile {
                     id: "p2".to_string(),
                     name: "配置二".to_string(),
                     base_url: "https://two.example/v1".to_string(),
                     bearer_token: "sk-two".to_string(),
+                    mode: ProviderProfileMode::Api,
                 },
             ],
         };
