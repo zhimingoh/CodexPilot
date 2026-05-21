@@ -581,7 +581,7 @@ fn strip_image_tags(value: &str) -> String {
             .unwrap_or(start + "<image>".len());
         output.replace_range(start..end, "");
     }
-    output
+    output.replace("</image>", "")
 }
 
 fn extract_image_src(block: &Value) -> Option<String> {
@@ -1005,7 +1005,7 @@ fn main() {}
         let rollout_path = unique_temp_path("html-image-rollout", "jsonl");
         fs::write(
             &rollout_path,
-            r#"{"type":"response_item","timestamp":"2026-05-21T09:47:03.505Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"点了同步没反应\n<image>\n> Image attachment\n</image>"},{"type":"input_image","image_url":"data:image/png;base64,abc"}]}}"#,
+            r#"{"type":"response_item","timestamp":"2026-05-21T09:47:03.505Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"点了同步没反应\n<image>"},{"type":"input_image","image_url":"data:image/png;base64,abc"},{"type":"input_text","text":"</image>"}]}}"#,
         )
         .unwrap();
         let db = Connection::open(&db_path).unwrap();
@@ -1031,6 +1031,7 @@ fn main() {}
         assert!(html.contains(r#"<span class="time">09:47</span>"#));
         assert!(html.contains(r#"<img src="data:image/png;base64,abc" alt="Image attachment">"#));
         assert!(!html.contains("&lt;image&gt;"));
+        assert!(!html.contains("&lt;/image&gt;"));
         assert!(!html.contains("Image attachment</div>"));
 
         let _ = fs::remove_file(db_path);
