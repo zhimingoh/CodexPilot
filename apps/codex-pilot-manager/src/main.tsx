@@ -122,6 +122,15 @@ type RecycleBinSnapshot = {
   entries: RecycleBinEntry[];
 };
 
+type RecycleBinBatchResponse = {
+  message: string;
+  succeededTokens: string[];
+  failed: Array<{
+    token: string;
+    message: string;
+  }>;
+};
+
 type ViewId = "overview" | "launch" | "provider" | "sessions" | "diagnostics";
 
 const views: Array<{ id: ViewId; label: string; icon: React.ElementType }> = [
@@ -1002,10 +1011,11 @@ function RecycleBinView({
     setPendingAction("restore");
     onProgress("正在恢复回收站会话");
     onMessage(`正在恢复 ${tokens.length} 条会话`);
-    callBackend<string>("restore_recycle_bin_entries", { request: { tokens } })
-      .then((message) => {
-        onMessage(message);
-        setSelected([]);
+    callBackend<RecycleBinBatchResponse>("restore_recycle_bin_entries", { request: { tokens } })
+      .then((result) => {
+        onMessage(result.message);
+        const succeeded = new Set(result.succeededTokens);
+        setSelected((current) => current.filter((token) => !succeeded.has(token)));
         onRefresh();
       })
       .catch((error) => onMessage(String(error)))
@@ -1022,10 +1032,11 @@ function RecycleBinView({
     setPendingAction("delete");
     onProgress("正在永久删除回收站记录");
     onMessage(`正在永久删除 ${selected.length} 条记录`);
-    callBackend<string>("delete_recycle_bin_entries", { request: { tokens: selected } })
-      .then((message) => {
-        onMessage(message);
-        setSelected([]);
+    callBackend<RecycleBinBatchResponse>("delete_recycle_bin_entries", { request: { tokens: selected } })
+      .then((result) => {
+        onMessage(result.message);
+        const succeeded = new Set(result.succeededTokens);
+        setSelected((current) => current.filter((token) => !succeeded.has(token)));
         onRefresh();
       })
       .catch((error) => onMessage(String(error)))

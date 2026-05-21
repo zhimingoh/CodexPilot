@@ -137,8 +137,16 @@ const commandHandlers: Record<string, MockCommandHandler> = {
   delete_provider_profile: () => "预览模式：配置档已删除",
   clear_provider: () => "预览模式：已切换为官方通道",
   sync_provider_sessions: () => "预览模式：Provider Sync 完成，目标 CodexPilot，会话文件 18 个，数据库行 19 条。",
-  restore_recycle_bin_entries: () => "预览模式：已恢复所选会话",
-  delete_recycle_bin_entries: () => "预览模式：已永久删除所选记录",
+  restore_recycle_bin_entries: () => ({
+    message: "预览模式：已恢复所选会话",
+    succeededTokens: ["preview-token-restore"],
+    failed: [],
+  }),
+  delete_recycle_bin_entries: () => ({
+    message: "预览模式：已永久删除所选记录",
+    succeededTokens: ["preview-token-restore", "preview-token-missing"],
+    failed: [],
+  }),
   collect_diagnostics: () => "预览模式：诊断快照已生成",
 };
 

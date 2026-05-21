@@ -11,6 +11,9 @@ docs/development/*
 !docs/development/readme-guidelines.md
 docs/previews/
 docs/superpowers/
+!docs/superpowers/
+!docs/superpowers/specs/
+!docs/superpowers/specs/*.md
 
 assets/dmg/
 

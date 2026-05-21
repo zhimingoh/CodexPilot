@@ -205,6 +205,21 @@ struct RecycleBinTokensRequest {
     tokens: Vec<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecycleBinBatchFailure {
+    token: String,
+    message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecycleBinBatchResponse {
+    message: String,
+    succeeded_tokens: Vec<String>,
+    failed: Vec<RecycleBinBatchFailure>,
+}
+
 #[tauri::command]
 fn backend_status() -> Result<Option<codex_pilot_core::status::BackendStatus>, String> {
     codex_pilot_core::status::read_status().map_err(|error| error.to_string())
@@ -597,64 +612,100 @@ async fn recycle_bin_snapshot() -> Result<RecycleBinSnapshot, String> {
 }
 
 #[tauri::command]
-async fn restore_recycle_bin_entries(request: RecycleBinTokensRequest) -> Result<String, String> {
+async fn restore_recycle_bin_entries(
+    request: RecycleBinTokensRequest,
+) -> Result<RecycleBinBatchResponse, String> {
     let tokens = sanitized_recycle_tokens(request.tokens)?;
     tauri::async_runtime::spawn_blocking(move || {
         let adapter = codex_pilot_data::storage::SQLiteStorageAdapter::new(
             codex_pilot_core::app_paths::codex_state_db_path(),
         );
-        let mut restored = 0usize;
+        let mut succeeded_tokens = Vec::new();
         let mut failed = Vec::new();
         for token in tokens {
             match adapter.undo(&token) {
                 Ok(result) if result.status == codex_pilot_data::storage::DeleteStatus::Undone => {
-                    restored += 1;
+                    succeeded_tokens.push(token);
                 }
-                Ok(result) => failed.push(format!("{}：{}", result.session_id, result.message)),
-                Err(error) => failed.push(format!("{token}：{error}")),
+                Ok(result) => failed.push(RecycleBinBatchFailure {
+                    token,
+                    message: format!("{}：{}", result.session_id, result.message),
+                }),
+                Err(error) => failed.push(RecycleBinBatchFailure {
+                    token: token.clone(),
+                    message: format!("{token}：{error}"),
+                }),
             }
         }
-        if failed.is_empty() {
-            Ok(format!("已恢复 {restored} 条会话。"))
+        let message = if failed.is_empty() {
+            format!("已恢复 {} 条会话。", succeeded_tokens.len())
         } else {
-            Ok(format!(
+            format!(
                 "已恢复 {restored} 条，会有 {} 条失败：{}",
                 failed.len(),
-                failed.join("；")
-            ))
-        }
+                failed
+                    .iter()
+                    .map(|item| item.message.as_str())
+                    .collect::<Vec<_>>()
+                    .join("；"),
+                restored = succeeded_tokens.len()
+            )
+        };
+        Ok(RecycleBinBatchResponse {
+            message,
+            succeeded_tokens,
+            failed,
+        })
     })
     .await
     .map_err(|error| format!("恢复回收站任务失败：{error}"))?
 }
 
 #[tauri::command]
-async fn delete_recycle_bin_entries(request: RecycleBinTokensRequest) -> Result<String, String> {
+async fn delete_recycle_bin_entries(
+    request: RecycleBinTokensRequest,
+) -> Result<RecycleBinBatchResponse, String> {
     let tokens = sanitized_recycle_tokens(request.tokens)?;
     tauri::async_runtime::spawn_blocking(move || {
         let adapter = codex_pilot_data::storage::SQLiteStorageAdapter::new(
             codex_pilot_core::app_paths::codex_state_db_path(),
         );
-        let mut deleted = 0usize;
+        let mut succeeded_tokens = Vec::new();
         let mut failed = Vec::new();
         for token in tokens {
             match adapter.delete_undo_backup(&token) {
                 Ok(result) if result.status == codex_pilot_data::storage::DeleteStatus::Deleted => {
-                    deleted += 1;
+                    succeeded_tokens.push(token);
                 }
-                Ok(result) => failed.push(format!("{}：{}", result.session_id, result.message)),
-                Err(error) => failed.push(format!("{token}：{error}")),
+                Ok(result) => failed.push(RecycleBinBatchFailure {
+                    token,
+                    message: format!("{}：{}", result.session_id, result.message),
+                }),
+                Err(error) => failed.push(RecycleBinBatchFailure {
+                    token: token.clone(),
+                    message: format!("{token}：{error}"),
+                }),
             }
         }
-        if failed.is_empty() {
-            Ok(format!("已永久删除 {deleted} 条回收站记录。"))
+        let message = if failed.is_empty() {
+            format!("已永久删除 {} 条回收站记录。", succeeded_tokens.len())
         } else {
-            Ok(format!(
+            format!(
                 "已永久删除 {deleted} 条，会有 {} 条失败：{}",
                 failed.len(),
-                failed.join("；")
-            ))
-        }
+                failed
+                    .iter()
+                    .map(|item| item.message.as_str())
+                    .collect::<Vec<_>>()
+                    .join("；"),
+                deleted = succeeded_tokens.len()
+            )
+        };
+        Ok(RecycleBinBatchResponse {
+            message,
+            succeeded_tokens,
+            failed,
+        })
     })
     .await
     .map_err(|error| format!("永久删除回收站记录任务失败：{error}"))?
