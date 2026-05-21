@@ -970,6 +970,7 @@ function RecycleBinView({
   const [customSyncTarget, setCustomSyncTarget] = React.useState("");
   const [syncInspecting, setSyncInspecting] = React.useState(false);
   const [syncBusy, setSyncBusy] = React.useState(false);
+  const [syncConfirming, setSyncConfirming] = React.useState(false);
   const selectedEntries = entries.filter((entry) => selected.includes(entry.token));
   const recoverableSelected = selectedEntries.filter((entry) => entry.recoverable);
   const allSelected = entries.length > 0 && selected.length === entries.length;
@@ -981,6 +982,7 @@ function RecycleBinView({
     })
       .then((snapshot) => {
         setSyncSnapshot(snapshot);
+        setSyncConfirming(false);
         if (syncTarget !== "__custom") {
           setSyncTarget(snapshot.targetProvider || "CodexPilot");
         }
@@ -996,6 +998,10 @@ function RecycleBinView({
     refreshProviderSync("CodexPilot")
       .catch((error) => onMessage(`检查对话归属失败：${String(error)}`));
   }, []);
+
+  React.useEffect(() => {
+    setSyncConfirming(false);
+  }, [selectedSyncTarget]);
 
   const toggleAll = () => {
     setSelected(allSelected ? [] : entries.map((entry) => entry.token));
@@ -1066,11 +1072,15 @@ function RecycleBinView({
     const pending = syncSnapshot
       ? syncSnapshot.rolloutRewriteNeeded + syncSnapshot.sqliteProviderRowsNeedingSync
       : 0;
-    if (!window.confirm(`确定把历史对话归属同步为“${target}”？预计影响 ${pending} 项。`)) {
+    if (!syncConfirming) {
+      setSyncConfirming(true);
+      onMessage(`请再次确认同步：目标 ${target}，预计影响 ${pending} 项。`);
       return;
     }
     setSyncBusy(true);
+    setSyncConfirming(false);
     onProgress("正在同步对话归属");
+    onMessage(`正在同步对话归属：${target}`);
     callBackend<string>("sync_provider_sessions", { request: { targetProvider: target } })
       .then((message) => {
         onMessage(message);
@@ -1215,8 +1225,13 @@ function RecycleBinView({
           </button>
           <button className="primary" disabled={syncBusy} onClick={runProviderSync} type="button">
             <RefreshCw size={16} />
-            {syncBusy ? "同步中" : "同步"}
+            {syncBusy ? "同步中" : syncConfirming ? "确认同步" : "同步"}
           </button>
+          {syncConfirming && (
+            <button className="secondary" disabled={syncBusy} onClick={() => setSyncConfirming(false)} type="button">
+              取消
+            </button>
+          )}
         </div>
       </div>
       <div className="syncTool">
