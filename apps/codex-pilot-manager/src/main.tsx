@@ -61,6 +61,14 @@ type ProviderSnapshot = {
   activeProfileId: string;
 };
 
+type CcsProviderSnapshot = {
+  dbPath: string;
+  availableCount: number;
+  importableCount: number;
+  status: string;
+  message: string;
+};
+
 type ProviderProfile = {
   id: string;
   name: string;
@@ -76,6 +84,15 @@ type UpstreamProtocol = "responses" | "chatCompletions" | "anthropicMessages";
 
 type ProviderProfileSaveResponse = {
   id: string;
+  message: string;
+};
+
+type CcsImportResult = {
+  importedCount: number;
+  skippedCount: number;
+  renamedCount: number;
+  provider: ProviderSnapshot;
+  ccs: CcsProviderSnapshot;
   message: string;
 };
 
@@ -169,6 +186,7 @@ function App() {
   const [appVersion, setAppVersion] = React.useState<string | null>(null);
   const [launch, setLaunch] = React.useState<LaunchSnapshot | null>(null);
   const [provider, setProvider] = React.useState<ProviderSnapshot | null>(null);
+  const [ccsProvider, setCcsProvider] = React.useState<CcsProviderSnapshot | null>(null);
   const [recycleBin, setRecycleBin] = React.useState<RecycleBinSnapshot | null>(null);
   const [diagnostics, setDiagnostics] = React.useState<DiagnosticsSnapshot | null>(null);
   const [message, setMessage] = React.useState("就绪");
@@ -200,6 +218,9 @@ function App() {
       callBackend<ProviderSnapshot>("provider_snapshot")
         .then(setProvider)
         .catch(() => setProvider(null)),
+      callBackend<CcsProviderSnapshot>("ccs_provider_snapshot")
+        .then(setCcsProvider)
+        .catch(() => setCcsProvider(null)),
       callBackend<RecycleBinSnapshot>("recycle_bin_snapshot")
         .then(setRecycleBin)
         .catch(() => setRecycleBin(null)),
@@ -364,6 +385,7 @@ function App() {
         {activeView === "launch" && <LaunchView status={status} launch={launch} onRefresh={refresh} />}
         {activeView === "provider" && (
           <ProviderView
+            ccsProvider={ccsProvider}
             provider={provider}
             onMessage={notify}
             onProgress={setProgressMessage}
@@ -472,7 +494,7 @@ function OverviewView({
             <div className="segmentedPreview">
               <span className={provider?.mode === "official" ? "active" : ""}>官方通道</span>
               <span className={provider?.mode === "hybridApi" ? "active" : ""}>混合中转</span>
-              <span className={provider?.mode === "api" ? "active" : ""}>无账号</span>
+              <span className={provider?.mode === "api" ? "active" : ""}>传统中转</span>
             </div>
             <p className="channelModeCopy">
               {provider?.mode === "official"
@@ -789,11 +811,13 @@ function SwitchRow({
 }
 
 function ProviderView({
+  ccsProvider,
   provider,
   onMessage,
   onProgress,
   onRefresh,
 }: {
+  ccsProvider: CcsProviderSnapshot | null;
   provider: ProviderSnapshot | null;
   onMessage: (message: string) => void;
   onProgress: (message: string) => void;
@@ -814,14 +838,18 @@ function ProviderView({
   const [isCreatingProfile, setIsCreatingProfile] = React.useState(false);
   const [pendingAction, setPendingAction] = React.useState("");
   const [pendingChannel, setPendingChannel] = React.useState<RunMode | null>(null);
+  const [refreshingCcs, setRefreshingCcs] = React.useState(false);
+  const [importingCcs, setImportingCcs] = React.useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = React.useState("");
   const currentMode = snapshotMode;
+  const editingProfile = profiles.find((profile) => profile.id === editingId) ?? null;
   const visibleProfiles: ProviderProfile[] = isCreatingProfile
     ? [{
         id: "",
         name: profileName || "新通道",
         baseUrl,
         bearerToken,
-        mode: selectedChannel === "api" ? "api" : "hybridApi",
+        mode: activeProfile?.mode ?? "hybridApi",
         upstreamProtocol,
       }]
     : profiles;
@@ -831,48 +859,37 @@ function ProviderView({
   }, [snapshotMode]);
 
   React.useEffect(() => {
-    if (!activeProfile || isCreatingProfile) return;
-    setEditingId(activeProfile.id);
-    setProfileName(activeProfile.name);
-    setBaseUrl(activeProfile.baseUrl);
-    setBearerToken(activeProfile.bearerToken);
-    setUpstreamProtocol(activeProfile.upstreamProtocol ?? "responses");
-  }, [activeProfile?.id, isCreatingProfile]);
+    if (isCreatingProfile || !editingProfile) return;
+    setProfileName(editingProfile.name);
+    setBaseUrl(editingProfile.baseUrl);
+    setBearerToken(editingProfile.bearerToken);
+    setUpstreamProtocol(editingProfile.upstreamProtocol ?? "responses");
+  }, [editingProfile?.id, isCreatingProfile]);
 
-  const saveApiChannel = (mode: ProviderProfileMode, messageLabel: string) => {
+  const saveProfile = () => {
     if (pendingAction) return;
     if (!profileName.trim() || !baseUrl.trim() || !bearerToken.trim()) {
       onMessage("配置名称、Base URL 和 API Key 不能为空");
       return;
     }
     setPendingAction("save");
-    onProgress(`正在保存${messageLabel}`);
-    onMessage(`正在保存${messageLabel}`);
+    onProgress("正在保存配置");
+    onMessage("正在保存配置");
     callBackend<ProviderProfileSaveResponse>("save_provider_profile", {
       request: {
         id: editingId || null,
         name: profileName,
         baseUrl,
         bearerToken,
-        mode,
+        mode: editingProfile?.mode ?? activeProfile?.mode ?? "hybridApi",
         upstreamProtocol,
-        activate: true,
+        activate: !editingId && !activeProfile,
       },
     })
       .then((saveResult) => {
         setEditingId(saveResult.id);
         setIsCreatingProfile(false);
         onMessage(saveResult.message);
-        return callBackend<string>("apply_provider", {
-          request: {
-            profileId: saveResult.id,
-            mode,
-          },
-        });
-      })
-      .then((applyMessage) => {
-        if (!applyMessage) return;
-        onMessage(applyMessage);
         onRefresh();
       })
       .catch((error) => onMessage(String(error)))
@@ -881,9 +898,6 @@ function ProviderView({
         onProgress("");
       });
   };
-
-  const saveMixedRelay = () => saveApiChannel("hybridApi", "混合中转");
-  const saveNoAuthChannel = () => saveApiChannel("api", "无账号");
 
   const applyChannel = (mode: RunMode) => {
     if (pendingAction || pendingChannel === mode) return;
@@ -926,23 +940,63 @@ function ProviderView({
     setBearerToken("");
     setUpstreamProtocol("responses");
     setShowToken(false);
+    setPendingDeleteId("");
     setIsCreatingProfile(true);
   };
 
   const selectProfile = (profile: ProviderProfile) => {
     callBackend<string>("activate_provider_profile", { request: { id: profile.id } })
       .then((message) => {
-        setEditingId(profile.id);
-        setProfileName(profile.name);
-        setBaseUrl(profile.baseUrl);
-        setBearerToken(profile.bearerToken);
-        setUpstreamProtocol(profile.upstreamProtocol ?? "responses");
-        setSelectedChannel(profile.mode);
         setIsCreatingProfile(false);
+        setPendingDeleteId("");
         onMessage(message);
         onRefresh();
       })
       .catch((error) => onMessage(String(error)));
+  };
+
+  const startEditingProfile = (profile: ProviderProfile) => {
+    setEditingId(profile.id);
+    setProfileName(profile.name);
+    setBaseUrl(profile.baseUrl);
+    setBearerToken(profile.bearerToken);
+    setUpstreamProtocol(profile.upstreamProtocol ?? "responses");
+    setShowToken(false);
+    setPendingDeleteId("");
+    setIsCreatingProfile(false);
+  };
+
+  const refreshCcsProviders = () => {
+    if (refreshingCcs || importingCcs) return;
+    setRefreshingCcs(true);
+    onProgress("正在刷新 CCSwitch 配置");
+    callBackend<CcsProviderSnapshot>("ccs_provider_snapshot")
+      .then((snapshot) => {
+        onMessage(snapshot.message);
+        onRefresh();
+      })
+      .catch((error) => onMessage(String(error)))
+      .finally(() => {
+        setRefreshingCcs(false);
+        onProgress("");
+      });
+  };
+
+  const importCcsProviders = () => {
+    if (refreshingCcs || importingCcs) return;
+    setImportingCcs(true);
+    onProgress("正在导入 CCSwitch 配置");
+    onMessage("正在导入 CCSwitch 配置");
+    callBackend<CcsImportResult>("import_ccs_provider_profiles")
+      .then((result) => {
+        onMessage(result.message);
+        onRefresh();
+      })
+      .catch((error) => onMessage(String(error)))
+      .finally(() => {
+        setImportingCcs(false);
+        onProgress("");
+      });
   };
 
   const deleteProfile = () => {
@@ -950,8 +1004,8 @@ function ProviderView({
       onMessage("请选择要删除的配置档");
       return;
     }
-    const name = profileName.trim() || activeProfile?.name || "当前配置档";
-    if (!window.confirm(`确定删除“${name}”？删除后会自动切换到其他配置档。`)) {
+    if (pendingDeleteId !== editingId) {
+      setPendingDeleteId(editingId);
       return;
     }
     callBackend<string>("delete_provider_profile", { request: { id: editingId } })
@@ -959,9 +1013,14 @@ function ProviderView({
         onMessage(message);
         setEditingId("");
         setIsCreatingProfile(false);
+        setPendingDeleteId("");
         onRefresh();
       })
       .catch((error) => onMessage(String(error)));
+  };
+
+  const cancelDelete = () => {
+    setPendingDeleteId("");
   };
 
   return (
@@ -1021,7 +1080,7 @@ function ProviderView({
             disabled={Boolean(pendingAction || pendingChannel)}
             icon={Bot}
             onClick={() => applyChannel("api")}
-            title="无账号"
+            title="传统中转"
           />
         </div>
       </section>
@@ -1035,31 +1094,74 @@ function ProviderView({
             </div>
           </div>
           <div className="profileList">
+            <div className="ccsImportRow">
+              <div className="ccsImportMeta">
+                <strong>CCSwitch 配置</strong>
+                <span>{ccsProviderSummary(ccsProvider)}</span>
+              </div>
+              <div className="ccsImportActions">
+                <button
+                  className="secondary"
+                  disabled={refreshingCcs || importingCcs}
+                  onClick={refreshCcsProviders}
+                  type="button"
+                >
+                  <RefreshCw size={16} />
+                  {refreshingCcs ? "刷新中" : "刷新"}
+                </button>
+                <button
+                  className="secondary"
+                  disabled={Boolean(refreshingCcs || importingCcs || !ccsProvider?.importableCount)}
+                  onClick={importCcsProviders}
+                  type="button"
+                >
+                  <Download size={16} />
+                  {importingCcs ? "导入中" : "导入"}
+                </button>
+              </div>
+            </div>
             {visibleProfiles.map((profile) => {
               const selected = isCreatingProfile ? !profile.id : profile.id === activeProfileId;
+              const editing = !isCreatingProfile && profile.id === editingId;
               return (
-                <div className={`profileItem ${selected ? "active" : ""}`} key={profile.id || "new"}>
-                  {selected ? (
-                      <div className="profileEditorHeader">
-                        <div className="profileEditorTitle">
-                          <span className="pill ok">当前配置</span>
-                          <span>{selectedChannel === "api" ? "无账号配置" : "混合中转配置"}</span>
+                <div className={`profileItem ${selected ? "active" : ""} ${editing ? "editing" : ""}`} key={profile.id || "new"}>
+                  {editing ? (
+                    <div className="profileEditorHeader">
+                      <div className="profileEditorTitle">
+                        {selected ? <span className="pill ok">当前配置</span> : null}
+                        <span>正在编辑</span>
+                      </div>
+                      {editingId ? (
+                        <div className="profileEditorActions">
+                          <button className="secondary" onClick={() => setEditingId("")} type="button">
+                            收起编辑
+                          </button>
+                          <button className={`profileDelete ${pendingDeleteId === editingId ? "dangerActive" : ""}`} onClick={deleteProfile} type="button">
+                            {pendingDeleteId === editingId ? "确认删除" : "删除配置"}
+                          </button>
+                          {pendingDeleteId === editingId ? (
+                            <button className="secondary" onClick={cancelDelete} type="button">
+                              取消
+                            </button>
+                          ) : null}
                         </div>
-                        {editingId && (
-                          <button className="profileDelete" onClick={deleteProfile} type="button">
-                          删除配置
-                        </button>
-                      )}
+                      ) : null}
                     </div>
                   ) : (
                     <div className="profileItemHeader">
                       <button className="profileSelectArea" onClick={() => profile.id && selectProfile(profile)} type="button">
                         <strong>{profile.name || "新中转"}</strong>
-                        <span>{`${profile.mode === "api" ? "无账号" : "混合中转"} · ${upstreamProtocolLabel(profile.upstreamProtocol)} · ${profile.baseUrl || "未填写 Base URL"}`}</span>
+                        <span>{`${upstreamProtocolLabel(profile.upstreamProtocol)} · ${profile.baseUrl || "未填写 Base URL"}`}</span>
                       </button>
+                      <div className="profileItemActions">
+                        {selected ? <span className="pill ok">当前配置</span> : null}
+                        <button className="secondary" onClick={() => startEditingProfile(profile)} type="button">
+                          编辑
+                        </button>
+                      </div>
                     </div>
                   )}
-                  {selected && (
+                  {(editing || isCreatingProfile) && (
                     <>
                       <div className="profileFormGrid">
                         <label>
@@ -1102,7 +1204,7 @@ function ProviderView({
                         <button
                           className="primary"
                           disabled={Boolean(pendingAction)}
-                          onClick={selectedChannel === "api" ? saveNoAuthChannel : saveMixedRelay}
+                          onClick={saveProfile}
                           type="button"
                         >
                           {pendingAction === "save" ? "保存中" : "保存配置"}
@@ -1169,7 +1271,7 @@ function ModeCard({
 
 function runModeLabel(mode: RunMode): string {
   if (mode === "hybridApi") return "混合中转";
-  if (mode === "api") return "无账号";
+  if (mode === "api") return "传统中转";
   return "官方通道";
 }
 
@@ -1177,6 +1279,14 @@ function upstreamProtocolLabel(protocol: UpstreamProtocol): string {
   if (protocol === "chatCompletions") return "Chat Completions";
   if (protocol === "anthropicMessages") return "Anthropic Messages";
   return "Responses API";
+}
+
+function ccsProviderSummary(snapshot: CcsProviderSnapshot | null): string {
+  if (!snapshot) return "尚未读取 CCSwitch 配置。";
+  if (snapshot.status === "error") return snapshot.message;
+  if (snapshot.status === "missing") return "未找到 CCSwitch 数据库。";
+  if (snapshot.status === "empty") return "未发现 CCSwitch Codex 配置。";
+  return snapshot.message;
 }
 
 function RecycleBinView({
