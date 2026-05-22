@@ -103,6 +103,13 @@ Contains recycle bin recovery and permanent deletion. This page can stay table-f
 
 Contains checks and logs. This page can stay utility-first.
 
+Diagnostic logs are append-only during normal operation, but they should not
+grow without bound. The backend should rotate `diagnostic.log` before appending
+when it exceeds a fixed size threshold. Keep the current log plus a small number
+of numbered backups, for example `diagnostic.log.1` through
+`diagnostic.log.5`, so recent troubleshooting context remains available without
+unbounded disk growth.
+
 ## Visual Direction
 
 - Keep the UI restrained and operational.

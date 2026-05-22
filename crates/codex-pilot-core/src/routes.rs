@@ -34,6 +34,7 @@ pub async fn handle_bridge_request(ctx: BridgeContext, path: &str, payload: Valu
             "helper_port": ctx.helper_port,
             "transport": "cdp-binding"
         }),
+        "/backend/recover-bridge" => recover_bridge(ctx).await,
         "/session/delete" => delete_session(ctx, payload).await,
         "/session/undo" => undo_session(ctx, payload).await,
         "/session/recycle-bin/list" => list_recycle_bin(ctx).await,
@@ -51,12 +52,70 @@ pub async fn handle_bridge_request(ctx: BridgeContext, path: &str, payload: Valu
         }),
         "/provider/apply" => apply_provider(payload),
         "/provider/clear" => clear_provider(),
+        "/enhancement/settings" => enhancement_settings(),
         "/diagnostics/report" => report_diagnostics(payload),
         _ => json!({
             "status": "failed",
             "message": format!("unknown bridge path: {path}")
         }),
     }
+}
+
+async fn recover_bridge(ctx: BridgeContext) -> Value {
+    let _ = crate::diagnostic_log::append(
+        "backend.recover_bridge",
+        json!({
+            "debug_port": ctx.debug_port,
+            "helper_port": ctx.helper_port
+        }),
+    );
+
+    let debug_port = ctx.debug_port;
+    let helper_port = ctx.helper_port;
+    std::thread::spawn(move || {
+        let result = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(anyhow::Error::from)
+            .and_then(|runtime| runtime.block_on(crate::launcher::inject_running_codex(debug_port, helper_port)));
+        let event = if result.is_ok() {
+            "backend.recover_bridge_ok"
+        } else {
+            "backend.recover_bridge_failed"
+        };
+        let _ = crate::diagnostic_log::append(
+            event,
+            json!({
+                "debug_port": debug_port,
+                "helper_port": helper_port,
+                "message": result.err().map(|error| error.to_string()).unwrap_or_default()
+            }),
+        );
+    });
+
+    json!({
+        "status": "ok",
+        "message": "CodexPilot bridge 恢复已启动",
+        "debug_port": ctx.debug_port,
+        "helper_port": ctx.helper_port
+    })
+}
+
+fn enhancement_settings() -> Value {
+    let path = crate::app_paths::app_state_dir().join("enhancement-settings.json");
+    let parsed = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|contents| serde_json::from_str::<Value>(&contents).ok())
+        .unwrap_or_else(|| json!({}));
+    json!({
+        "status": "ok",
+        "result": {
+            "enabled": parsed.get("enabled").and_then(Value::as_bool).unwrap_or(true),
+            "timeline": parsed.get("timeline").and_then(Value::as_bool).unwrap_or(true),
+            "inlineActions": parsed.get("inlineActions").and_then(Value::as_bool).unwrap_or(true),
+            "scrollRestore": parsed.get("scrollRestore").and_then(Value::as_bool).unwrap_or(true)
+        }
+    })
 }
 
 async fn list_recycle_bin(ctx: BridgeContext) -> Value {
@@ -311,6 +370,23 @@ mod tests {
 
         assert_eq!(result["status"], "failed");
         assert!(result["message"].as_str().unwrap().contains("/missing"));
+    }
+
+    #[tokio::test]
+    async fn recover_bridge_schedules_reinjection() {
+        let result = handle_bridge_request(
+            BridgeContext {
+                debug_port: 9,
+                helper_port: 58888,
+                db_path: std::path::PathBuf::from("state_5.sqlite"),
+            },
+            "/backend/recover-bridge",
+            json!({}),
+        )
+        .await;
+
+        assert_eq!(result["status"], "ok");
+        assert!(result["message"].as_str().unwrap().contains("恢复已启动"));
     }
 
     #[tokio::test]

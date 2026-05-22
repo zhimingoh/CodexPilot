@@ -37,6 +37,13 @@ Detailed status text belongs inside the opened panel, not in the always-visible 
 
 CodexPilot checks backend status automatically when the injected menu is created, then refreshes it periodically. Users should not need to click a status check action just to make the dot trustworthy.
 
+If the backend status heartbeat times out repeatedly after a long lock screen or
+sleep/wake cycle, CodexPilot should treat that as a stale bridge signal rather
+than immediately assuming the backend process is gone. After three consecutive
+status timeouts, the renderer should request a bridge recovery through the
+existing bridge channel. Recovery is rate-limited and reinjects the current
+Codex page; it does not restart Codex or CodexPilot.
+
 ## Panel Behavior
 
 The existing panel structure should remain small:
@@ -60,6 +67,11 @@ Keeping the bottom-right injected entry avoids depending on Codex's sidebar grou
 - On menu creation, default to `checking`.
 - Automatically call the existing backend status bridge on creation and on a short heartbeat.
 - When checking backend status, set `checking`, then `connected` on success or `unknown` on failure.
+- Track consecutive backend status timeouts. After three consecutive timeouts,
+  report a diagnostic event and call `/backend/recover-bridge`.
+- Rate-limit recovery attempts so a stale page cannot continuously reinject.
+- Implement `/backend/recover-bridge` by reusing the existing current-page
+  injection path with the active debug and helper ports.
 - Use CSS custom properties or status selectors to map dot color.
 - Keep row hover actions out of this design unless a follow-up explicitly targets them.
 
@@ -69,5 +81,7 @@ Keeping the bottom-right injected entry avoids depending on Codex's sidebar grou
 - The entry still clearly communicates that CodexPilot is available.
 - The entry shows connection state through dot color.
 - Backend status refreshes automatically without a manual check button.
+- After repeated heartbeat timeouts, CodexPilot records diagnostics and attempts
+  to recover by reinjecting the bridge once per cooldown window.
 - Clicking the entry opens the same panel as before.
 - No new dependency on Codex sidebar/header DOM is introduced.

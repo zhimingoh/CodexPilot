@@ -46,6 +46,34 @@ struct LaunchPreferences {
     auto_launch_on_open: bool,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct EnhancementSettings {
+    #[serde(default = "default_true")]
+    enabled: bool,
+    #[serde(default = "default_true")]
+    timeline: bool,
+    #[serde(default = "default_true")]
+    inline_actions: bool,
+    #[serde(default = "default_true")]
+    scroll_restore: bool,
+}
+
+impl Default for EnhancementSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            timeline: true,
+            inline_actions: true,
+            scroll_restore: true,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
 impl Default for LaunchPreferences {
     fn default() -> Self {
         let options = codex_pilot_core::launcher::LaunchOptions::default();
@@ -395,6 +423,18 @@ fn save_launch_preferences(request: LaunchPreferences) -> Result<String, String>
     let prefs = sanitize_launch_preferences(request)?;
     save_launch_preferences_to_path(&manager_config_path(), &prefs)?;
     Ok("启动偏好已保存。".to_string())
+}
+
+#[tauri::command]
+fn enhancement_settings_snapshot() -> EnhancementSettings {
+    load_enhancement_settings()
+}
+
+#[tauri::command]
+fn save_enhancement_settings(request: EnhancementSettings) -> Result<String, String> {
+    let settings = sanitize_enhancement_settings(request);
+    save_enhancement_settings_to_path(&enhancement_settings_path(), &settings)?;
+    Ok("页面增强设置已保存，重新注入后生效。".to_string())
 }
 
 #[tauri::command]
@@ -793,6 +833,8 @@ pub fn run() {
             reinject_codex,
             restart_codex_and_inject,
             save_launch_preferences,
+            enhancement_settings_snapshot,
+            save_enhancement_settings,
             provider_snapshot,
             apply_provider,
             save_provider_profile,
@@ -1133,6 +1175,10 @@ fn provider_profiles_path() -> PathBuf {
     codex_pilot_core::app_paths::app_state_dir().join("provider-profiles.json")
 }
 
+fn enhancement_settings_path() -> PathBuf {
+    codex_pilot_core::app_paths::app_state_dir().join("enhancement-settings.json")
+}
+
 fn load_provider_profiles() -> ProviderProfilesState {
     load_provider_profiles_from_path(&provider_profiles_path()).unwrap_or_default()
 }
@@ -1237,6 +1283,37 @@ fn sanitize_provider_profiles_state(
 
 fn load_launch_preferences() -> LaunchPreferences {
     load_launch_preferences_from_path(&manager_config_path()).unwrap_or_default()
+}
+
+fn load_enhancement_settings() -> EnhancementSettings {
+    load_enhancement_settings_from_path(&enhancement_settings_path()).unwrap_or_default()
+}
+
+fn load_enhancement_settings_from_path(path: &Path) -> Result<EnhancementSettings, String> {
+    if !path.exists() {
+        return Ok(EnhancementSettings::default());
+    }
+    let contents =
+        std::fs::read_to_string(path).map_err(|error| format!("读取页面增强设置失败：{error}"))?;
+    let settings = serde_json::from_str::<EnhancementSettings>(&contents)
+        .map_err(|error| format!("解析页面增强设置失败：{error}"))?;
+    Ok(sanitize_enhancement_settings(settings))
+}
+
+fn save_enhancement_settings_to_path(
+    path: &Path,
+    settings: &EnhancementSettings,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| format!("创建配置目录失败：{error}"))?;
+    }
+    let contents = serde_json::to_string_pretty(&sanitize_enhancement_settings(settings.clone()))
+        .map_err(|error| format!("序列化页面增强设置失败：{error}"))?;
+    std::fs::write(path, contents).map_err(|error| format!("写入页面增强设置失败：{error}"))
+}
+
+fn sanitize_enhancement_settings(settings: EnhancementSettings) -> EnhancementSettings {
+    settings
 }
 
 fn load_launch_preferences_from_path(path: &Path) -> Result<LaunchPreferences, String> {
@@ -1400,6 +1477,25 @@ mod tests {
 
         assert_eq!(prefs.debug_port, 9444);
         assert_eq!(prefs.helper_port, 58888);
+    }
+
+    #[test]
+    fn enhancement_settings_round_trip() {
+        let root = unique_temp_dir("enhancement-settings");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("enhancement-settings.json");
+        let settings = EnhancementSettings {
+            enabled: false,
+            timeline: true,
+            inline_actions: false,
+            scroll_restore: true,
+        };
+
+        save_enhancement_settings_to_path(&path, &settings).unwrap();
+        let loaded = load_enhancement_settings_from_path(&path).unwrap();
+
+        assert_eq!(loaded, settings);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

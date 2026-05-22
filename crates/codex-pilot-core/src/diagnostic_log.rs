@@ -4,6 +4,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const MAX_LOG_BYTES: u64 = 20 * 1024 * 1024;
+const ROTATED_LOGS: usize = 5;
+
 #[cfg(test)]
 static TEST_LOG_PATH: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
 
@@ -28,6 +31,7 @@ pub fn append(event: &str, detail: Value) -> anyhow::Result<()> {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
+    rotate_if_needed(&path)?;
     let line = json!({
         "ts": now_ms(),
         "event": sanitize_event(event),
@@ -43,21 +47,71 @@ pub fn append(event: &str, detail: Value) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn rotate_if_needed(path: &PathBuf) -> anyhow::Result<()> {
+    let Ok(metadata) = fs::metadata(path) else {
+        return Ok(());
+    };
+    if metadata.len() < MAX_LOG_BYTES {
+        return Ok(());
+    }
+    for index in (1..=ROTATED_LOGS).rev() {
+        let source = rotated_path(path, index);
+        let destination = rotated_path(path, index + 1);
+        if source.exists() {
+            if index == ROTATED_LOGS {
+                let _ = fs::remove_file(&source);
+            } else {
+                fs::rename(&source, &destination).with_context(|| {
+                    format!(
+                        "failed to rotate {} to {}",
+                        source.display(),
+                        destination.display()
+                    )
+                })?;
+            }
+        }
+    }
+    let first = rotated_path(path, 1);
+    fs::rename(path, &first)
+        .with_context(|| format!("failed to rotate {} to {}", path.display(), first.display()))?;
+    Ok(())
+}
+
+fn rotated_path(path: &PathBuf, index: usize) -> PathBuf {
+    PathBuf::from(format!("{}.{}", path.display(), index))
+}
+
 pub fn read_tail(max_lines: usize) -> anyhow::Result<Vec<String>> {
     let path = log_path();
-    if !path.exists() {
+    if !path.exists() && !rotated_path(&path, 1).exists() {
         return Ok(Vec::new());
     }
-    let text =
-        fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
-    let mut lines = text
-        .lines()
-        .rev()
-        .take(max_lines)
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
+    let mut lines = Vec::new();
+    for path in log_paths_newest_first(&path) {
+        if !path.exists() {
+            continue;
+        }
+        let text = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let remaining = max_lines.saturating_sub(lines.len());
+        if remaining == 0 {
+            break;
+        }
+        lines.extend(
+            text.lines()
+                .rev()
+                .take(remaining)
+                .map(ToString::to_string),
+        );
+    }
     lines.reverse();
     Ok(lines)
+}
+
+fn log_paths_newest_first(path: &PathBuf) -> Vec<PathBuf> {
+    let mut paths = vec![path.clone()];
+    paths.extend((1..=ROTATED_LOGS).map(|index| rotated_path(path, index)));
+    paths
 }
 
 fn now_ms() -> u128 {
@@ -108,6 +162,12 @@ fn redact(value: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn test_log_guard() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
 
     #[test]
     fn redact_hides_secret_like_keys() {
@@ -115,5 +175,53 @@ mod tests {
         assert_eq!(value["api_key"], "[redacted]");
         assert_eq!(value["nested"]["token"], "[redacted]");
         assert_eq!(value["safe"], "ok");
+    }
+
+    #[test]
+    fn append_rotates_large_log_file() {
+        let _guard = test_log_guard();
+        let root = std::env::temp_dir().join(format!(
+            "codex-pilot-diagnostic-log-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("diagnostic.log");
+        set_test_log_path(path.clone());
+        fs::write(&path, vec![b'x'; (MAX_LOG_BYTES + 1) as usize]).unwrap();
+
+        append("test.rotate", json!({"safe": "ok"})).unwrap();
+
+        assert!(path.exists());
+        assert!(rotated_path(&path, 1).exists());
+        assert!(fs::metadata(&path).unwrap().len() < MAX_LOG_BYTES);
+        let current = fs::read_to_string(&path).unwrap();
+        assert!(current.contains("test.rotate"));
+        let _ = fs::remove_dir_all(root);
+        set_test_log_path(PathBuf::from("diagnostic.log"));
+    }
+
+    #[test]
+    fn read_tail_spans_rotated_logs() {
+        let _guard = test_log_guard();
+        let root = std::env::temp_dir().join(format!(
+            "codex-pilot-diagnostic-tail-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("diagnostic.log");
+        set_test_log_path(path.clone());
+        fs::write(rotated_path(&path, 1), "old-1\nold-2\n").unwrap();
+        fs::write(&path, "new-1\nnew-2\n").unwrap();
+
+        assert_eq!(read_tail(3).unwrap(), vec!["old-2", "new-1", "new-2"]);
+
+        let _ = fs::remove_dir_all(root);
+        set_test_log_path(PathBuf::from("diagnostic.log"));
     }
 }

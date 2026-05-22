@@ -109,6 +109,21 @@ content: `session-meta-backup.json` stores each changed rollout path and its
 original first `session_meta` line only. It must not store the rest of the
 rollout file.
 
+Provider Sync should also write diagnostic events to the CodexPilot diagnostic
+log so sync drift can be explained after the fact. Diagnostics should record:
+
+- target provider and pre-sync rollout/SQLite provider distribution;
+- SQLite provider rows needing sync before update;
+- provider rows actually updated by the SQLite transaction;
+- SQLite provider rows still needing sync immediately after commit;
+- a delayed SQLite recheck shortly after sync, to distinguish "sync did not
+  update the rows" from "another Codex process wrote old index data back";
+- compact drift details for remaining rows: id, title, source, thread source,
+  SQLite provider, rollout first-line provider, and updated timestamp.
+
+Diagnostics must not include conversation body text, API keys, auth tokens, or
+full rollout contents.
+
 ## Copy
 
 Use these visible labels:

@@ -132,6 +132,13 @@ const commandHandlers: Record<string, MockCommandHandler> = {
   reinject_codex: () => "预览模式：已模拟重新注入 CodexPilot",
   restart_codex_and_inject: () => "预览模式：已模拟重启并注入 Codex",
   save_launch_preferences: () => "预览模式：启动偏好已保存",
+  enhancement_settings_snapshot: () => ({
+    enabled: true,
+    timeline: true,
+    inlineActions: true,
+    scrollRestore: true,
+  }),
+  save_enhancement_settings: () => "预览模式：页面增强设置已保存，重新注入后生效。",
   save_provider_profile: () => ({
     id: "team-relay",
     message: "预览模式：配置档已保存",

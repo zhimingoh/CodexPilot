@@ -55,7 +55,8 @@ select {
   border-radius: 7px;
   color: #1d2630;
   font: inherit;
-  min-height: 36px;
+  font-size: 13px;
+  min-height: 32px;
   padding: 0 10px;
   width: 100%;
 }
@@ -69,7 +70,7 @@ input[type="checkbox"] {
 
 .shell {
   display: grid;
-  grid-template-columns: 212px 1fr;
+  grid-template-columns: 184px 1fr;
   height: 100vh;
   overflow: hidden;
 }
@@ -86,31 +87,31 @@ input[type="checkbox"] {
 .previewWindow {
   background: #f5f6f8;
   border: 1px solid #b8c3d2;
-  box-shadow: 0 22px 54px rgba(15, 23, 42, 0.22);
+  box-shadow: 0 18px 45px rgba(20, 30, 45, 0.18);
   height: 760px;
   overflow: auto;
   width: 1120px;
 }
 
 .previewWindow .shell {
-  min-height: 760px;
+  height: 760px;
 }
 
 .sidebar {
-  background: #ffffff;
+  background: #fbfcfd;
   border-right: 1px solid #d7dde5;
   height: 100vh;
   overflow: auto;
-  padding: 18px 12px;
+  padding: 14px 10px;
 }
 
 .brand {
   align-items: center;
   display: flex;
   gap: 9px;
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 700;
-  margin: 0 8px 18px;
+  margin: 0 8px 12px;
 }
 
 .brand svg {
@@ -130,8 +131,9 @@ input[type="checkbox"] {
   color: #526071;
   cursor: pointer;
   display: flex;
+  font-size: 13px;
   gap: 10px;
-  min-height: 36px;
+  min-height: 32px;
   padding: 0 10px;
   text-align: left;
   width: 100%;
@@ -156,7 +158,7 @@ input[type="checkbox"] {
   height: 100vh;
   min-width: 0;
   overflow: auto;
-  padding: 24px;
+  padding: 12px 18px 18px;
 }
 
 .pageHeader {
@@ -164,7 +166,7 @@ input[type="checkbox"] {
   display: flex;
   gap: 18px;
   justify-content: space-between;
-  margin-bottom: 18px;
+  margin-bottom: 8px;
 }
 
 .headerActions {
@@ -184,7 +186,7 @@ dd {
 }
 
 h1 {
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1.15;
 }
 
@@ -209,10 +211,11 @@ h2 {
   border-radius: 7px;
   cursor: pointer;
   display: inline-flex;
-  gap: 8px;
+  font-size: 13px;
+  gap: 6px;
   justify-content: center;
-  min-height: 36px;
-  padding: 0 12px;
+  min-height: 30px;
+  padding: 0 10px;
 }
 
 .primary {
@@ -430,6 +433,49 @@ h2 {
   font-size: 13px;
 }
 
+.launchPreferences {
+  display: grid;
+  gap: 10px;
+}
+
+.preferenceField {
+  display: grid;
+  gap: 5px;
+}
+
+.preferenceField span {
+  color: #6a7889;
+  font-size: 12px;
+}
+
+.preferenceGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.preferenceFooter {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  justify-content: space-between;
+}
+
+.compactCheckbox {
+  min-width: 0;
+}
+
+.compactCheckbox span {
+  color: #4f5f72;
+  font-size: 13px;
+}
+
+.compactButtonRow {
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
 .formMessage {
   color: #526071;
   font-size: 12px;
@@ -508,18 +554,18 @@ h2 {
 
 .taskStack {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
 .taskPanel {
   background: #ffffff;
-  border: 1px solid #d7dde5;
+  border: 1px solid #d4ddea;
   border-radius: 8px;
   display: grid;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
-  padding: 14px 16px;
+  padding: 12px 16px 14px;
 }
 
 .primaryTask {
@@ -527,8 +573,24 @@ h2 {
   border-color: #bdd1fb;
 }
 
-.taskHeader {
+.overviewLaunchTask {
+  gap: 12px;
+  padding: 12px 16px 14px;
+}
+
+.providerTask {
+  padding: 12px 16px 14px;
+}
+
+.summaryTask {
   align-items: center;
+  grid-template-columns: minmax(160px, 0.45fr) minmax(0, 1fr) auto;
+  min-height: 52px;
+  padding: 8px 10px;
+}
+
+.taskHeader {
+  align-items: start;
   display: flex;
   gap: 12px;
   justify-content: space-between;
@@ -545,8 +607,172 @@ h2 {
   min-width: 0;
 }
 
-.overviewMetrics {
-  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+.metricGrid.overviewMetrics {
+  gap: 9px;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+}
+
+.summaryTask .metricGrid.overviewMetrics {
+  grid-template-columns: repeat(auto-fit, minmax(96px, max-content));
+}
+
+.summaryTaskHeader {
+  display: flex;
+}
+
+.summaryAction {
+  justify-self: end;
+}
+
+.titleLine {
+  align-items: center;
+  display: flex;
+  gap: 9px;
+  min-width: 0;
+}
+
+.titleIcon {
+  align-items: center;
+  background: #e8f0ff;
+  border: 1px solid #cbdcfb;
+  border-radius: 7px;
+  color: #1f56c5;
+  display: inline-grid;
+  flex: 0 0 auto;
+  height: 28px;
+  place-items: center;
+  width: 28px;
+}
+
+.taskSummary {
+  color: #596779;
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 6px;
+}
+
+.statusPill {
+  align-items: center;
+  background: #eef1f5;
+  border: 1px solid #dce4ee;
+  border-radius: 999px;
+  color: #526071;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 7px;
+  min-height: 26px;
+  padding: 0 10px;
+}
+
+.statusPill.ok {
+  background: #ecfdf5;
+  border-color: #b8e8d1;
+  color: #0f6b46;
+}
+
+.statusPill.warning {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a4f0c;
+}
+
+.providerOverviewBody {
+  display: grid;
+  gap: 9px;
+  grid-template-columns: minmax(380px, 1.25fr) minmax(250px, 0.75fr);
+}
+
+.channelChoiceSummary {
+  background: #f8fafc;
+  border: 1px solid #dde5ef;
+  border-radius: 7px;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.channelChoiceSummary p {
+  color: #5e6d7f;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.channelChoiceSummary .channelModeCopy {
+  color: #4f5f73;
+  line-height: 1.45;
+}
+
+.segmentedPreview {
+  background: #edf2f7;
+  border: 1px solid #dbe3ed;
+  border-radius: 7px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+}
+
+.segmentedPreview span {
+  align-items: center;
+  border-radius: 5px;
+  color: #526174;
+  display: flex;
+  font-size: 12px;
+  font-weight: 700;
+  height: 28px;
+  justify-content: center;
+}
+
+.segmentedPreview span.active {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(20, 30, 45, 0.12);
+  color: #1d4fa8;
+}
+
+.rowIcon {
+  align-items: center;
+  background: #f0f4f8;
+  border: 1px solid #dce4ee;
+  border-radius: 6px;
+  color: #43536a;
+  display: inline-grid;
+  flex: 0 0 auto;
+  height: 26px;
+  place-items: center;
+  width: 26px;
+}
+
+.profileOverviewGrid {
+  display: grid;
+  gap: 8px;
+}
+
+.fieldLine {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 74px minmax(0, 1fr);
+}
+
+.fieldLine span {
+  color: #687586;
+  font-size: 11px;
+}
+
+.fieldLine strong {
+  background: #ffffff;
+  border: 1px solid #d9e1eb;
+  border-radius: 5px;
+  color: #2f3d50;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  padding: 5px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .providerLayout {
@@ -559,7 +785,7 @@ h2 {
 .diagnosticsLayout,
 .sessionsLayout {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   grid-template-columns: 1fr;
   min-width: 0;
 }
@@ -573,7 +799,25 @@ h2 {
   border: 1px solid #d7dde5;
   border-radius: 8px;
   min-width: 0;
-  padding: 16px;
+  padding: 12px 16px 14px;
+}
+
+.recyclePanel {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.recyclePanel .panelHeader {
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.diagnosticsLayout .panelHeader {
+  align-items: flex-start;
+}
+
+.recyclePanel .formHint {
+  margin-bottom: 8px;
 }
 
 .panelHeader,
@@ -585,14 +829,15 @@ h2 {
 .panelHeader {
   gap: 12px;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   min-width: 0;
 }
 
 .panelTitle {
   color: #233044;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 0;
+  min-width: 0;
 }
 
 .panelHeader .panelTitle {
@@ -605,7 +850,7 @@ h2 {
 
 .statusPanel,
 .loginControl {
-  padding: 14px 16px;
+  padding: 12px 16px 14px;
 }
 
 .modePanel code,
@@ -692,8 +937,12 @@ h2 {
 
 .syncControls {
   display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.syncControls.customMode {
+  max-width: 640px;
 }
 
 .syncControls label {
@@ -712,18 +961,30 @@ h2 {
   grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
 }
 
-.syncStatusCard {
+.syncFieldRow {
   align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.syncStatusCard {
   background: #f8fafc;
   border: 1px solid #e2e7ee;
   border-radius: 7px;
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding: 12px;
+  padding: 10px;
 }
 
-.syncStatusCard > div {
+.syncStatusMain {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.syncStatusCopy {
   align-items: flex-start;
   display: flex;
   gap: 10px;
@@ -733,13 +994,13 @@ h2 {
 .syncStatusCard strong {
   color: #1d2630;
   display: block;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.3;
 }
 
 .syncStatusCard p {
   color: #637183;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.45;
   margin: 3px 0 0;
 }
@@ -749,7 +1010,13 @@ h2 {
   gap: 10px;
   grid-template-columns: repeat(2, minmax(96px, 1fr));
   margin: 0;
-  min-width: 220px;
+  min-width: 0;
+}
+
+.syncActionGroup {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .syncStatusIcon {
@@ -777,7 +1044,7 @@ h2 {
   border-top: 1px solid #e6ebf2;
   display: grid;
   gap: 10px;
-  padding-top: 10px;
+  padding-top: 8px;
 }
 
 .syncDetails summary {
@@ -837,20 +1104,26 @@ h2 {
 }
 
 .statusMetric {
+  background: #f8fafc;
+  border: 1px solid #e0e6ef;
+  border-radius: 7px;
   min-width: 0;
+  padding: 10px;
 }
 
 .statusMetric span {
   color: #6a7889;
   display: block;
-  font-size: 12px;
-  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-bottom: 5px;
+  text-transform: uppercase;
 }
 
 .statusMetric strong {
   color: #1d2630;
   display: block;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -1041,7 +1314,7 @@ dd {
 .tableWrap {
   border: 1px solid #e2e7ee;
   border-radius: 7px;
-  max-height: 360px;
+  max-height: 270px;
   overflow: auto;
 }
 
@@ -1054,9 +1327,9 @@ dd {
 .dataTable th,
 .dataTable td {
   border-bottom: 1px solid #e2e7ee;
-  height: 40px;
+  height: 33px;
   max-width: 0;
-  padding: 6px 10px;
+  padding: 4px 10px;
   text-align: left;
   vertical-align: middle;
 }
@@ -1075,7 +1348,7 @@ dd {
 .dataTable td {
   color: #243244;
   font-size: 12px;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 
 .dataTable tr:last-child td {
@@ -1133,7 +1406,7 @@ dd {
   border-radius: 7px;
   color: #1f2b3a;
   display: grid;
-  gap: 13px;
+  gap: 11px;
   padding: 12px;
   text-align: left;
   width: 100%;
@@ -1148,15 +1421,32 @@ dd {
 }
 
 .profileItem.active {
-  background: #ffffff;
-  border-color: #d7dde5;
+  background: #fbfdff;
+  border-color: #c9d8f5;
 }
 
-.profileItemHeader {
+.profileItemHeader,
+.profileEditorHeader {
   align-items: flex-start;
   display: flex;
   gap: 12px;
   justify-content: space-between;
+  min-width: 0;
+}
+
+.profileEditorHeader {
+  align-items: center;
+  border-bottom: 1px solid #e4eaf3;
+  padding-bottom: 9px;
+}
+
+.profileEditorTitle {
+  align-items: center;
+  color: #5e6d7e;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -1204,7 +1494,7 @@ dd {
 
 .profileFormGrid {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   grid-template-columns: 1fr 1.35fr 1.35fr;
 }
 
@@ -1264,6 +1554,83 @@ dd {
   line-height: 1.45;
   margin: -5px 0 14px;
   overflow-wrap: anywhere;
+}
+
+.enhancementPanel {
+  display: grid;
+  gap: 10px;
+}
+
+.enhancementPanel .panelTitle {
+  margin-bottom: 0;
+}
+
+.enhancementIntro {
+  margin: 0;
+}
+
+.enhancementList,
+.enhancementChildren {
+  display: grid;
+  gap: 8px;
+}
+
+.enhancementChildren.disabled {
+  opacity: 0.58;
+}
+
+.switchRow {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e0e6ef;
+  border-radius: 7px;
+  cursor: pointer;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 56px;
+  padding: 10px 12px;
+}
+
+.switchRow:hover {
+  background: #f8fbff;
+  border-color: #c9d9f6;
+}
+
+.switchRow.disabled {
+  cursor: not-allowed;
+}
+
+.switchText {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.switchText strong {
+  color: #1f2b3a;
+  font-size: 13px;
+}
+
+.switchText span {
+  color: #637183;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.switchRow input[type="checkbox"] {
+  accent-color: #2563eb;
+  height: 18px;
+  width: 18px;
+}
+
+.subtleMessage {
+  background: #f8fafc;
+  border: 1px solid #e1e7f0;
+  border-radius: 7px;
+  color: #526071;
+  margin: 0;
+  padding: 9px 10px;
 }
 
 .checkList {
@@ -1367,15 +1734,41 @@ dd {
   .modeGrid,
   .overviewMetrics,
   .metricGrid,
-  .syncStatusCard,
+  .summaryTask,
   .row,
   .checkRow {
     grid-template-columns: 1fr;
   }
 
+  .syncStatusMain {
+    grid-template-columns: 1fr;
+  }
+
+  .syncFieldRow {
+    grid-template-columns: 1fr;
+  }
+
+  .preferenceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .preferenceFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compactButtonRow {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+
   .syncStatusCard dl {
     grid-template-columns: 1fr;
     min-width: 0;
+  }
+
+  .syncActionGroup {
+    justify-content: flex-start;
   }
 
   .taskHeader {

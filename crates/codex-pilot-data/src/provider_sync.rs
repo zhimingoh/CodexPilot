@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -56,6 +57,18 @@ struct SessionChange {
     cwd: Option<String>,
     has_user_event: bool,
     rewrite_needed: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProviderDriftDetail {
+    id: String,
+    title: String,
+    source: String,
+    thread_source: String,
+    sqlite_provider: String,
+    rollout_provider: Option<String>,
+    updated_at_ms: Option<i64>,
+    rollout_path: String,
 }
 
 pub fn inspect_provider_sync(codex_home: Option<&Path>) -> anyhow::Result<ProviderSyncInspection> {
@@ -175,12 +188,28 @@ pub fn run_provider_sync_with_target(
             .iter()
             .filter_map(|change| Some((change.thread_id.clone()?, change.cwd.clone()?)))
             .collect::<HashMap<_, _>>();
+        let sqlite_path = home.join("state_5.sqlite");
         let sqlite_update_count = count_sqlite_updates(
-            &home.join("state_5.sqlite"),
+            &sqlite_path,
             &target_provider,
             &thread_ids_with_user_events,
             &cwd_by_thread_id,
         )?;
+        log_provider_sync_event(
+            &home,
+            "provider_sync.before",
+            json!({
+                "target_provider": target_provider,
+                "rollout_files": changes.len(),
+                "rollout_rewrite_needed": rewrite_changes.len(),
+                "sqlite_rows": count_sqlite_rows(&sqlite_path).unwrap_or_default(),
+                "sqlite_provider_rows_needing_sync": count_sqlite_provider_rows_needing_sync(&sqlite_path, &target_provider).unwrap_or_default(),
+                "sqlite_total_updates_needed": sqlite_update_count,
+                "rollout_providers": provider_counts(changes.iter().filter_map(|change| rollout_provider_from_first_line(&change.original_first_line))),
+                "sqlite_providers": sqlite_provider_counts(&sqlite_path).unwrap_or_default(),
+                "drift_details": sqlite_provider_drift_details(&sqlite_path, &target_provider).unwrap_or_default()
+            }),
+        );
         let global_state_update_count =
             count_global_state_updates(&home.join(".codex-global-state.json"))?;
         if rewrite_changes.is_empty() && sqlite_update_count == 0 && global_state_update_count == 0
@@ -199,11 +228,24 @@ pub fn run_provider_sync_with_target(
         apply_session_changes(&rewrite_changes)?;
         let apply_result = (|| -> anyhow::Result<usize> {
             let sqlite_rows_updated = apply_sqlite_update(
-                &home.join("state_5.sqlite"),
+                &sqlite_path,
                 &target_provider,
                 &thread_ids_with_user_events,
                 &cwd_by_thread_id,
             )?;
+            let remaining_after_commit =
+                count_sqlite_provider_rows_needing_sync(&sqlite_path, &target_provider)?;
+            log_provider_sync_event(
+                &home,
+                "provider_sync.after_commit",
+                json!({
+                    "target_provider": target_provider,
+                    "sqlite_provider_rows_updated": sqlite_rows_updated,
+                    "sqlite_provider_rows_remaining": remaining_after_commit,
+                    "sqlite_providers": sqlite_provider_counts(&sqlite_path).unwrap_or_default(),
+                    "drift_details": sqlite_provider_drift_details(&sqlite_path, &target_provider).unwrap_or_default()
+                }),
+            );
             apply_global_state_update(&home.join(".codex-global-state.json"))?;
             prune_backups(&home)?;
             Ok(sqlite_rows_updated)
@@ -215,6 +257,7 @@ pub fn run_provider_sync_with_target(
                 return Err(error);
             }
         };
+        schedule_provider_sync_delayed_recheck(home.clone(), target_provider.clone());
         Ok(result(
             ProviderSyncStatus::Synced,
             "Provider Sync 完成",
@@ -625,6 +668,107 @@ fn sqlite_provider_counts(path: &Path) -> anyhow::Result<Vec<ProviderCount>> {
     Ok(items)
 }
 
+fn sqlite_provider_drift_details(
+    path: &Path,
+    target_provider: &str,
+) -> anyhow::Result<Vec<ProviderDriftDetail>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let db = Connection::open(path)?;
+    let columns = table_columns(&db, "threads")?;
+    if !columns.contains("model_provider") {
+        return Ok(Vec::new());
+    }
+    let has_thread_source = columns.contains("thread_source");
+    let has_updated_at_ms = columns.contains("updated_at_ms");
+    let select_thread_source = if has_thread_source {
+        "COALESCE(thread_source, '')"
+    } else {
+        "''"
+    };
+    let select_updated_at_ms = if has_updated_at_ms {
+        "updated_at_ms"
+    } else {
+        "NULL"
+    };
+    let order_updated_at_ms = if has_updated_at_ms {
+        "updated_at_ms DESC,"
+    } else {
+        ""
+    };
+    let sql = format!(
+        "SELECT id, COALESCE(title, ''), COALESCE(source, ''), {select_thread_source}, COALESCE(model_provider, ''), {select_updated_at_ms}, rollout_path \
+         FROM threads WHERE COALESCE(model_provider, '') <> ?1 ORDER BY {order_updated_at_ms} id LIMIT 50"
+    );
+    let mut stmt = db.prepare(&sql)?;
+    let rows = stmt.query_map([target_provider], |row| {
+        let rollout_path: String = row.get(6)?;
+        Ok(ProviderDriftDetail {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            source: row.get(2)?,
+            thread_source: row.get(3)?,
+            sqlite_provider: row.get(4)?,
+            rollout_provider: rollout_provider_from_path(Path::new(&rollout_path)),
+            updated_at_ms: row.get(5)?,
+            rollout_path,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+fn rollout_provider_from_path(path: &Path) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let first_line = text.lines().next()?;
+    rollout_provider_from_first_line(first_line)
+}
+
+fn schedule_provider_sync_delayed_recheck(home: PathBuf, target_provider: String) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let sqlite_path = home.join("state_5.sqlite");
+        log_provider_sync_event(
+            &home,
+            "provider_sync.after_delay",
+            json!({
+                "target_provider": target_provider,
+                "sqlite_provider_rows_remaining": count_sqlite_provider_rows_needing_sync(&sqlite_path, &target_provider).unwrap_or_default(),
+                "sqlite_providers": sqlite_provider_counts(&sqlite_path).unwrap_or_default(),
+                "drift_details": sqlite_provider_drift_details(&sqlite_path, &target_provider).unwrap_or_default()
+            }),
+        );
+    });
+}
+
+fn log_provider_sync_event(home: &Path, event: &str, detail: Value) {
+    let path = diagnostic_log_path(home);
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let line = json!({
+        "ts": now_ms(),
+        "event": event,
+        "detail": detail,
+    });
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+fn diagnostic_log_path(home: &Path) -> PathBuf {
+    let app_state_root = if cfg!(windows) {
+        std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"))
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| dirs_home().join(".config"))
+    };
+    app_state_root.join("CodexPilot").join("diagnostic.log")
+}
+
 fn apply_sqlite_update(
     path: &Path,
     target_provider: &str,
@@ -813,6 +957,13 @@ fn now_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn now_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 #[cfg(test)]

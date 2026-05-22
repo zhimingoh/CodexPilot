@@ -133,11 +133,18 @@ type RecycleBinBatchResponse = {
   }>;
 };
 
+type EnhancementSettings = {
+  enabled: boolean;
+  timeline: boolean;
+  inlineActions: boolean;
+  scrollRestore: boolean;
+};
+
 type ViewId = "overview" | "launch" | "provider" | "sessions" | "diagnostics";
 
 const views: Array<{ id: ViewId; label: string; icon: React.ElementType }> = [
   { id: "overview", label: "总览", icon: Activity },
-  { id: "launch", label: "启动", icon: Terminal },
+  { id: "launch", label: "启动与注入", icon: Terminal },
   { id: "provider", label: "模型通道", icon: LogIn },
   { id: "sessions", label: "对话维护", icon: History },
   { id: "diagnostics", label: "诊断", icon: Stethoscope },
@@ -325,7 +332,6 @@ function App() {
       <section className="content">
         <header className="pageHeader">
           <div>
-            <p className="eyebrow">管理工具</p>
             <h1>{views.find((view) => view.id === activeView)?.label}</h1>
           </div>
           <div className="headerActions">
@@ -416,11 +422,20 @@ function OverviewView({
 
   return (
     <div className="taskStack">
-      <section className="taskPanel primaryTask">
+      <section className="taskPanel primaryTask overviewLaunchTask">
         <div className="taskHeader">
-          <div className="panelTitle compactTitle">
-            <Terminal size={16} />
-            <h2>启动就绪</h2>
+          <div>
+            <div className="panelTitle compactTitle titleLine">
+              <span className="titleIcon">
+                <Terminal size={16} />
+              </span>
+              <h2>启动与注入</h2>
+              <span className={`statusPill ${canRunLaunchAction(launch) ? "ok" : "warning"}`}>
+                <span className={`statusDot ${canRunLaunchAction(launch) ? "ok" : "warning"}`} />
+                {launch?.actionLabel ?? "检查中"}
+              </span>
+            </div>
+            <p className="taskSummary">主面板集中展示启动前最关键的状态和端口，详细路径与命令预览保留在启动设置页。</p>
           </div>
         </div>
         <dl className="metricGrid overviewMetrics">
@@ -437,52 +452,76 @@ function OverviewView({
         </div>
       </section>
 
-      <section className="taskPanel">
+      <section className="taskPanel providerTask">
         <div className="taskHeader">
-          <div className="panelTitle compactTitle">
-            <LogIn size={16} />
-            <h2>模型通道</h2>
+          <div>
+            <div className="panelTitle compactTitle titleLine">
+              <span className="titleIcon">
+                <LogIn size={16} />
+              </span>
+              <h2>模型通道</h2>
+            </div>
+            <p className="taskSummary">当前请求路由与登录状态，详细 API 配置在模型通道页维护。</p>
           </div>
           <button className="secondary" onClick={() => onNavigate("provider")} type="button">选择通道</button>
         </div>
-        <dl className="metricGrid overviewMetrics">
-          <Metric label="通道" value={providerMode} />
-          <Metric label="官方登录" value={provider?.authenticated ? "已检测" : "未检测"} />
-          <Metric label="配置档" value={provider?.profile ?? "默认"} />
-        </dl>
-        <div className="accountLine">
-          <span className={`statusDot ${provider?.authenticated ? "ok" : "warning"}`} />
-          <span>登录账号</span>
-          <strong>{provider?.accountLabel ?? "未读取到账号信息"}</strong>
+        <div className="providerOverviewBody">
+          <div className="channelChoiceSummary">
+            <div className="segmentedPreview">
+              <span className={provider?.mode === "official" ? "active" : ""}>官方通道</span>
+              <span className={provider?.mode !== "official" ? "active" : ""}>混合中转</span>
+            </div>
+            <p className="channelModeCopy">
+              {provider?.mode === "official"
+                ? "使用 Codex/ChatGPT 官方登录，不写入自定义模型供应商。"
+                : "保留 Codex/ChatGPT 登录，把模型请求转到当前 API 配置。"}
+            </p>
+            <p>账号：{provider?.accountLabel ?? "未读取到账号信息"}</p>
+            <p>当前配置：{provider?.profile ?? "默认"}</p>
+          </div>
+          <div className="profileOverviewGrid">
+            <div className="fieldLine">
+              <span>通道</span>
+              <strong>{providerMode}</strong>
+            </div>
+            <div className="fieldLine">
+              <span>官方登录</span>
+              <strong>{provider?.authenticated ? "已检测" : "未检测"}</strong>
+            </div>
+            <div className="fieldLine">
+              <span>配置档</span>
+              <strong>{provider?.profile ?? "默认"}</strong>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="taskPanel">
-        <div className="taskHeader">
+      <section className="taskPanel summaryTask">
+        <div className="taskHeader summaryTaskHeader">
           <div className="panelTitle compactTitle">
-            <Trash2 size={16} />
+            <span className="rowIcon"><Trash2 size={14} /></span>
             <h2>对话维护</h2>
           </div>
-          <button className="secondary" onClick={() => onNavigate("sessions")} type="button">打开对话维护</button>
         </div>
         <dl className="metricGrid overviewMetrics">
           <Metric label="已删除" value={`${deletedCount} 条`} />
           <Metric label="可恢复" value={`${recoverableCount} 条`} />
         </dl>
+        <button className="secondary summaryAction" onClick={() => onNavigate("sessions")} type="button">打开对话维护</button>
       </section>
 
-      <section className="taskPanel">
-        <div className="taskHeader">
+      <section className="taskPanel summaryTask">
+        <div className="taskHeader summaryTaskHeader">
           <div className="panelTitle compactTitle">
-            <Stethoscope size={16} />
+            <span className="rowIcon"><Stethoscope size={14} /></span>
             <h2>诊断摘要</h2>
           </div>
-          <button className="secondary" onClick={() => onNavigate("diagnostics")} type="button">查看诊断</button>
         </div>
         <dl className="metricGrid overviewMetrics">
           <Metric label="检查项" value={`${diagnosticsChecks.length} 项`} />
           <Metric label="需关注" value={`${failingChecks} 项`} />
         </dl>
+        <button className="secondary summaryAction" onClick={() => onNavigate("diagnostics")} type="button">查看诊断</button>
       </section>
     </div>
   );
@@ -501,7 +540,15 @@ function LaunchView({
   const [debugPort, setDebugPort] = React.useState("9688");
   const [helperPort, setHelperPort] = React.useState("58888");
   const [autoLaunchOnOpen, setAutoLaunchOnOpen] = React.useState(false);
+  const [enhancementSettings, setEnhancementSettings] = React.useState<EnhancementSettings>({
+    enabled: true,
+    timeline: true,
+    inlineActions: true,
+    scrollRestore: true,
+  });
   const [saveMessage, setSaveMessage] = React.useState("");
+  const [enhancementMessage, setEnhancementMessage] = React.useState("");
+  const [enhancementSaving, setEnhancementSaving] = React.useState(false);
   const backendState = backendStatusLabel(status);
   const connectionState = launch?.debugReachable ? "可直接注入" : launch?.codexRunning ? "需要重启注入" : "可启动";
 
@@ -512,6 +559,12 @@ function LaunchView({
     setHelperPort(String(launch.helperPort));
     setAutoLaunchOnOpen(Boolean(launch.autoLaunchOnOpen));
   }, [launch]);
+
+  React.useEffect(() => {
+    callBackend<EnhancementSettings>("enhancement_settings_snapshot")
+      .then(setEnhancementSettings)
+      .catch((error) => setEnhancementMessage(`读取页面增强设置失败：${String(error)}`));
+  }, []);
 
   const savePreferences = () => {
     const debug = Number(debugPort);
@@ -543,6 +596,22 @@ function LaunchView({
       .catch((error) => setSaveMessage(String(error)));
   };
 
+  const updateEnhancementSettings = (patch: Partial<EnhancementSettings>) => {
+    const next = { ...enhancementSettings, ...patch };
+    setEnhancementSettings(next);
+    setEnhancementSaving(true);
+    setEnhancementMessage("正在保存页面增强设置");
+    callBackend<string>("save_enhancement_settings", { request: next })
+      .then(setEnhancementMessage)
+      .catch((error) => {
+        setEnhancementMessage(`保存页面增强设置失败：${String(error)}`);
+        return callBackend<EnhancementSettings>("enhancement_settings_snapshot")
+          .then(setEnhancementSettings)
+          .catch(() => {});
+      })
+      .finally(() => setEnhancementSaving(false));
+  };
+
   return (
     <div className="taskStack">
       <section className="taskPanel primaryTask">
@@ -561,9 +630,113 @@ function LaunchView({
       </section>
 
       <section className="panel">
-        <div className="panelTitle">
-          <CheckCircle2 size={16} />
-          <h2>运行环境</h2>
+        <div className="panelHeader">
+          <div className="panelTitle">
+            <Settings size={16} />
+            <h2>启动偏好</h2>
+          </div>
+        </div>
+        <div className="launchPreferences">
+          <label className="preferenceField pathField">
+            <span>Codex 应用路径</span>
+            <input
+              value={appPath}
+              onChange={(event) => setAppPath(event.target.value)}
+              placeholder="/Applications/Codex.app"
+            />
+          </label>
+          <div className="preferenceGrid">
+            <label className="preferenceField">
+              <span>调试端口</span>
+              <input
+                inputMode="numeric"
+                value={debugPort}
+                onChange={(event) => setDebugPort(event.target.value)}
+                placeholder="9688"
+              />
+            </label>
+            <label className="preferenceField">
+              <span>后端端口</span>
+              <input
+                inputMode="numeric"
+                value={helperPort}
+                onChange={(event) => setHelperPort(event.target.value)}
+                placeholder="58888"
+              />
+            </label>
+          </div>
+          <div className="preferenceFooter">
+            <label className="checkboxRow compactCheckbox">
+              <input
+                checked={autoLaunchOnOpen}
+                onChange={(event) => setAutoLaunchOnOpen(event.target.checked)}
+                type="checkbox"
+              />
+              <span>打开 CodexPilot 时自动启动或注入 Codex</span>
+            </label>
+            <div className="buttonRow compactButtonRow">
+              <button className="primary" onClick={savePreferences} type="button">保存偏好</button>
+              <button className="secondary" onClick={() => setAppPath("")} type="button">使用自动探测</button>
+            </div>
+          </div>
+          {saveMessage && <p className="formMessage">{saveMessage}</p>}
+        </div>
+      </section>
+
+      <section className="panel enhancementPanel">
+        <div className="panelHeader">
+          <div className="panelTitle">
+            <Settings size={16} />
+            <h2>页面增强</h2>
+          </div>
+        </div>
+        <p className="formHint enhancementIntro">
+          控制注入到 Codex 页面里的可见增强。关闭后不会影响模型通道、对话维护和诊断。
+        </p>
+        <div className="enhancementList">
+          <SwitchRow
+            checked={enhancementSettings.enabled}
+            description="关闭后隐藏 Pilot 页面入口、Timeline、行内操作和阅读位置恢复。"
+            disabled={enhancementSaving}
+            label="页面增强总开关"
+            onChange={(checked) => updateEnhancementSettings({ enabled: checked })}
+          />
+          <div className={`enhancementChildren ${!enhancementSettings.enabled ? "disabled" : ""}`}>
+            <SwitchRow
+              checked={enhancementSettings.timeline}
+              description="在长对话右侧显示问题跳转点。"
+              disabled={!enhancementSettings.enabled || enhancementSaving}
+              label="Timeline"
+              onChange={(checked) => updateEnhancementSettings({ timeline: checked })}
+            />
+            <SwitchRow
+              checked={enhancementSettings.inlineActions}
+              description="在会话列表和归档列表显示 Markdown、HTML 导出与删除操作。"
+              disabled={!enhancementSettings.enabled || enhancementSaving}
+              label="行内导出和删除"
+              onChange={(checked) => updateEnhancementSettings({ inlineActions: checked })}
+            />
+            <SwitchRow
+              checked={enhancementSettings.scrollRestore}
+              description="切换会话后回到上次阅读位置。"
+              disabled={!enhancementSettings.enabled || enhancementSaving}
+              label="滚动恢复"
+              onChange={(checked) => updateEnhancementSettings({ scrollRestore: checked })}
+            />
+          </div>
+        </div>
+        {!enhancementSettings.enabled && (
+          <p className="formMessage subtleMessage">页面增强已关闭，下面的分项设置会在重新打开后继续生效。</p>
+        )}
+        {enhancementMessage && <p className="formMessage">{enhancementMessage}</p>}
+      </section>
+
+      <section className="panel">
+        <div className="panelHeader">
+          <div className="panelTitle">
+            <CheckCircle2 size={16} />
+            <h2>运行环境</h2>
+          </div>
         </div>
         <div className="rows">
           <Row label="Codex 应用" value={launch?.appPath ?? "未发现"} />
@@ -577,55 +750,36 @@ function LaunchView({
           {launch?.commandPreview.length ? launch.commandPreview.join(" ") : "暂无启动命令"}
         </pre>
       </section>
-
-      <section className="panel">
-        <div className="panelTitle">
-          <Settings size={16} />
-          <h2>启动偏好</h2>
-        </div>
-        <div className="formStack">
-          <label>
-            <span>Codex 应用路径</span>
-            <input
-              value={appPath}
-              onChange={(event) => setAppPath(event.target.value)}
-              placeholder="/Applications/Codex.app"
-            />
-          </label>
-          <label>
-            <span>调试端口</span>
-            <input
-              inputMode="numeric"
-              value={debugPort}
-              onChange={(event) => setDebugPort(event.target.value)}
-              placeholder="9688"
-            />
-          </label>
-          <label>
-            <span>后端端口</span>
-            <input
-              inputMode="numeric"
-              value={helperPort}
-              onChange={(event) => setHelperPort(event.target.value)}
-              placeholder="58888"
-            />
-          </label>
-          <label className="checkboxRow">
-            <input
-              checked={autoLaunchOnOpen}
-              onChange={(event) => setAutoLaunchOnOpen(event.target.checked)}
-              type="checkbox"
-            />
-            <span>打开 CodexPilot 时自动启动或注入 Codex</span>
-          </label>
-          <div className="buttonRow">
-            <button className="primary" onClick={savePreferences} type="button">保存偏好</button>
-            <button className="secondary" onClick={() => setAppPath("")} type="button">使用自动探测</button>
-          </div>
-          {saveMessage && <p className="formMessage">{saveMessage}</p>}
-        </div>
-      </section>
     </div>
+  );
+}
+
+function SwitchRow({
+  checked,
+  description,
+  disabled,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  description: string;
+  disabled?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className={`switchRow ${disabled ? "disabled" : ""}`}>
+      <span className="switchText">
+        <strong>{label}</strong>
+        <span>{description}</span>
+      </span>
+      <input
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+    </label>
   );
 }
 
@@ -783,7 +937,7 @@ function ProviderView({
         <div className="panelHeader">
           <div className="panelTitle compactTitle">
             <CheckCircle2 size={16} />
-            <h2>当前状态</h2>
+            <h2>通道状态</h2>
           </div>
           <code>{provider?.source ?? "~/.codex/config.toml"}</code>
         </div>
@@ -833,26 +987,37 @@ function ProviderView({
 
       {customChannelSelected ? (
         <section className="panel widePanel profilePanel">
-          <div className="panelTitle">
-            <Network size={16} />
-            <h2>配置档</h2>
+          <div className="panelHeader">
+            <div className="panelTitle">
+              <Network size={16} />
+              <h2>配置档</h2>
+            </div>
           </div>
           <div className="profileList">
             {visibleProfiles.map((profile) => {
               const selected = isCreatingProfile ? !profile.id : profile.id === activeProfileId;
               return (
                 <div className={`profileItem ${selected ? "active" : ""}`} key={profile.id || "new"}>
-                  <div className="profileItemHeader">
-                    <button className="profileSelectArea" onClick={() => profile.id && selectProfile(profile)} type="button">
-                      <strong>{profile.name || "新中转"}</strong>
-                      <span>{selected ? "当前配置 · 混合中转" : `混合中转 · ${profile.baseUrl || "未填写 Base URL"}`}</span>
-                    </button>
-                    {selected && editingId && (
-                      <button className="profileDelete" onClick={deleteProfile} type="button">
-                        删除
+                  {selected ? (
+                    <div className="profileEditorHeader">
+                      <div className="profileEditorTitle">
+                        <span className="pill ok">当前配置</span>
+                        <span>混合中转配置</span>
+                      </div>
+                      {editingId && (
+                        <button className="profileDelete" onClick={deleteProfile} type="button">
+                          删除配置
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="profileItemHeader">
+                      <button className="profileSelectArea" onClick={() => profile.id && selectProfile(profile)} type="button">
+                        <strong>{profile.name || "新中转"}</strong>
+                        <span>{`混合中转 · ${profile.baseUrl || "未填写 Base URL"}`}</span>
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   {selected && (
                     <>
                       <div className="profileFormGrid">
@@ -896,9 +1061,11 @@ function ProviderView({
         </section>
       ) : (
         <section className="panel widePanel officialPanel">
-          <div className="panelTitle">
-            <BadgeCheck size={16} />
-            <h2>官方通道</h2>
+          <div className="panelHeader">
+            <div className="panelTitle">
+              <BadgeCheck size={16} />
+              <h2>官方通道</h2>
+            </div>
           </div>
           <div className="officialBox">
             <strong>使用 Codex/ChatGPT 官方登录</strong>
@@ -996,7 +1163,7 @@ function RecycleBinView({
 
   React.useEffect(() => {
     refreshProviderSync("CodexPilot")
-      .catch((error) => onMessage(`检查对话归属失败：${String(error)}`));
+      .catch((error) => onMessage(`检查对话同步失败：${String(error)}`));
   }, []);
 
   React.useEffect(() => {
@@ -1060,10 +1227,10 @@ function RecycleBinView({
     if (syncInspecting) return;
     const target = selectedSyncTarget || "CodexPilot";
     setSyncInspecting(true);
-    onMessage(`正在检查对话归属：${target}`);
+    onMessage(`正在检查对话同步：${target}`);
     refreshProviderSync(target)
       .then((snapshot) => onMessage(`检查完成：${providerSyncSummary(snapshot)}`))
-      .catch((error) => onMessage(`检查对话归属失败：${String(error)}`))
+      .catch((error) => onMessage(`检查对话同步失败：${String(error)}`))
       .finally(() => setSyncInspecting(false));
   };
 
@@ -1079,15 +1246,15 @@ function RecycleBinView({
     }
     setSyncBusy(true);
     setSyncConfirming(false);
-    onProgress("正在同步对话归属");
-    onMessage(`正在同步对话归属：${target}`);
+    onProgress("正在同步对话");
+    onMessage(`正在同步对话：${target}`);
     callBackend<string>("sync_provider_sessions", { request: { targetProvider: target } })
       .then((message) => {
         onMessage(message);
         refreshProviderSync(target);
         onRefresh();
       })
-      .catch((error) => onMessage(`同步对话归属失败：${String(error)}`))
+      .catch((error) => onMessage(`同步对话失败：${String(error)}`))
       .finally(() => {
         setSyncBusy(false);
         onProgress("");
@@ -1095,6 +1262,7 @@ function RecycleBinView({
   };
 
   const providerOptions = syncSnapshot?.availableProviders ?? ["CodexPilot"];
+  const customTargetSelected = syncTarget === "__custom";
   const syncPending = syncSnapshot
     ? syncSnapshot.rolloutRewriteNeeded + syncSnapshot.sqliteProviderRowsNeedingSync
     : 0;
@@ -1118,9 +1286,47 @@ function RecycleBinView({
     `状态：${entry.status || (entry.recoverable ? "可恢复" : "不可恢复")}`,
   ].join("\n");
 
+  const syncAction = (() => {
+    if (syncBusy) {
+      return (
+        <button className="primary" disabled type="button">
+          <RefreshCw size={16} />
+          同步中
+        </button>
+      );
+    }
+    if (syncConfirming) {
+      return (
+        <div className="syncActionGroup">
+          <button className="primary" onClick={runProviderSync} type="button">
+            <RefreshCw size={16} />
+            确认同步
+          </button>
+          <button className="secondary" onClick={() => setSyncConfirming(false)} type="button">
+            取消
+          </button>
+        </div>
+      );
+    }
+    if (syncPending <= 0) {
+      return (
+        <button className="secondary" disabled type="button">
+          <CheckCircle2 size={16} />
+          无需同步
+        </button>
+      );
+    }
+    return (
+      <button className="primary" onClick={runProviderSync} type="button">
+        <RefreshCw size={16} />
+        同步
+      </button>
+    );
+  })();
+
   return (
     <div className="sessionsLayout">
-    <section className="panel">
+    <section className="panel recyclePanel">
       <div className="panelHeader">
         <div className="panelTitle">
           <Trash2 size={16} />
@@ -1216,52 +1422,62 @@ function RecycleBinView({
       <div className="panelHeader">
         <div className="panelTitle">
           <History size={16} />
-          <h2>对话归属同步</h2>
+          <h2>对话同步</h2>
         </div>
         <div className="buttonRow">
           <button className="secondary" disabled={syncInspecting} onClick={inspectProviderSync} type="button">
             <RefreshCw size={16} />
             {syncInspecting ? "检查中" : "预览影响"}
           </button>
-          <button className="primary" disabled={syncBusy} onClick={runProviderSync} type="button">
-            <RefreshCw size={16} />
-            {syncBusy ? "同步中" : syncConfirming ? "确认同步" : "同步"}
-          </button>
-          {syncConfirming && (
-            <button className="secondary" disabled={syncBusy} onClick={() => setSyncConfirming(false)} type="button">
-              取消
-            </button>
-          )}
         </div>
       </div>
       <div className="syncTool">
-        <div className="syncControls">
+        <div className={`syncControls ${customTargetSelected ? "customMode" : ""}`}>
           <label>
             <span>目标 Provider</span>
-            <select value={syncTarget} onChange={(event) => setSyncTarget(event.target.value)}>
-              {providerOptions.map((provider) => (
-                <option key={provider} value={provider}>{provider}</option>
-              ))}
-              <option value="__custom">自定义</option>
-            </select>
-            <span className="fieldHint">将历史对话归属统一到这个 Provider；操作前可先预览影响。</span>
+            {customTargetSelected ? (
+              <div className="syncFieldRow">
+                <input
+                  value={customSyncTarget}
+                  onChange={(event) => setCustomSyncTarget(event.target.value)}
+                  placeholder="provider-name"
+                />
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setCustomSyncTarget("");
+                    setSyncTarget(syncSnapshot?.currentProvider ?? providerOptions[0] ?? "CodexPilot");
+                  }}
+                  type="button"
+                >
+                  选择预设
+                </button>
+              </div>
+            ) : (
+              <div className="syncFieldRow">
+                <select value={syncTarget} onChange={(event) => setSyncTarget(event.target.value)}>
+                  {providerOptions.map((provider) => (
+                    <option key={provider} value={provider}>{provider}</option>
+                  ))}
+                  <option value="__custom">自定义</option>
+                </select>
+              </div>
+            )}
+            <span className="fieldHint">将历史对话统一到这个 Provider；操作前可先预览影响。</span>
           </label>
-          {syncTarget === "__custom" && (
-            <label>
-              <span>自定义 Provider</span>
-              <input value={customSyncTarget} onChange={(event) => setCustomSyncTarget(event.target.value)} placeholder="provider-name" />
-            </label>
-          )}
         </div>
         <div className={`syncStatusCard ${syncPending > 0 ? "needsSync" : "ok"}`}>
-          <div>
-            <span className="syncStatusIcon">
-              {syncPending > 0 ? <RefreshCw size={16} /> : <CheckCircle2 size={16} />}
-            </span>
-            <div>
-              <strong>{syncStatusTitle}</strong>
-              <p>{syncStatusDetail}</p>
+          <div className="syncStatusMain">
+            <div className="syncStatusCopy">
+              <span className="syncStatusIcon">
+                {syncPending > 0 ? <RefreshCw size={16} /> : <CheckCircle2 size={16} />}
+              </span>
+              <div>
+                <strong>{syncStatusTitle}</strong>
+                <p>{syncStatusDetail}</p>
+              </div>
             </div>
+            {syncAction}
           </div>
           <dl>
             <Metric label="目标归属" value={selectedSyncTarget || "CodexPilot"} />
@@ -1350,7 +1566,7 @@ function DiagnosticsView({
       <div className="panelHeader">
         <div className="panelTitle">
           <Stethoscope size={16} />
-          <h2>检查项</h2>
+          <h2>运行检查</h2>
         </div>
         <div className="buttonRow">
           <button className="primary" onClick={collectDiagnostics} type="button">

@@ -1,12 +1,21 @@
 (function () {
   const scriptVersion = "__CODEX_PILOT_VERSION__";
-  if (window.__CODEX_PILOT_INJECTED__ === scriptVersion) {
-    return;
+  const bootId = `${Date.now()}-${Math.random()}`;
+  window.__CODEX_PILOT_BOOT_ID__ = bootId;
+  if (window.__codexPilotBackendStatusHeartbeat) {
+    window.clearInterval?.(window.__codexPilotBackendStatusHeartbeat);
+    delete window.__codexPilotBackendStatusHeartbeat;
   }
   const existingRoot = document.getElementById("codex-pilot-root");
   if (existingRoot) {
     existingRoot.remove();
   }
+  document.getElementById("codex-pilot-timeline")?.remove();
+  document.querySelectorAll(".codex-pilot-row-actions, .codex-pilot-archive-action, .codex-pilot-toast").forEach((node) => node.remove());
+  document.querySelectorAll("[data-codex-pilot-row], [data-codex-pilot-archive-row]").forEach((node) => {
+    delete node.dataset.codexPilotRow;
+    delete node.dataset.codexPilotArchiveRow;
+  });
   window.__CODEX_PILOT_INJECTED__ = scriptVersion;
 
   const helperPort = Number("__CODEX_PILOT_HELPER_PORT__");
@@ -30,6 +39,23 @@
   let routeCheckTimer = null;
   let lastTimelineSignature = "";
   let lastTimelineNoTargetsAt = 0;
+  let consecutiveBackendTimeouts = 0;
+  let recoveryInFlight = false;
+  let lastRecoveryAttemptAt = 0;
+  const backendStatusTimeoutMs = 2000;
+  const backendRecoveryThreshold = 3;
+  const backendRecoveryCooldownMs = 60000;
+  const defaultEnhancementSettings = {
+    enabled: true,
+    timeline: true,
+    inlineActions: true,
+    scrollRestore: true
+  };
+  let enhancementSettings = { ...defaultEnhancementSettings };
+
+  function isActiveBoot() {
+    return window.__CODEX_PILOT_BOOT_ID__ === bootId;
+  }
 
   window.__CODEX_PILOT__ = {
     version: scriptVersion,
@@ -46,6 +72,12 @@
     },
     backendStatus() {
       return this.bridge("/backend/status");
+    },
+    recoverBridge() {
+      return this.bridge("/backend/recover-bridge");
+    },
+    enhancementSettings() {
+      return this.bridge("/enhancement/settings");
     },
     detectSession() {
       return detectCurrentSession();
@@ -83,6 +115,28 @@
     } catch (_error) {
       // Diagnostic reporting must never break the Codex page.
     }
+  }
+
+  function normalizeEnhancementSettings(value) {
+    const source = value && typeof value === "object" ? value : {};
+    return {
+      enabled: source.enabled !== false,
+      timeline: source.timeline !== false,
+      inlineActions: source.inlineActions !== false,
+      scrollRestore: source.scrollRestore !== false
+    };
+  }
+
+  async function loadEnhancementSettings() {
+    try {
+      const response = await window.__CODEX_PILOT__.enhancementSettings();
+      const result = response.result || response;
+      enhancementSettings = normalizeEnhancementSettings(result);
+    } catch (error) {
+      enhancementSettings = { ...defaultEnhancementSettings };
+      reportRendererEvent("enhancement_settings_error", { message: String(error) });
+    }
+    return enhancementSettings;
   }
 
   function ensureStyles() {
@@ -311,7 +365,7 @@
         opacity: 0;
         pointer-events: none;
         position: absolute;
-        right: 42px;
+        right: 76px;
         top: 50%;
         padding: 0;
         transform: translateY(-50%);
@@ -327,8 +381,8 @@
 
       [data-codex-pilot-row="true"]:hover [data-thread-title],
       [data-codex-pilot-row="true"]:focus-within [data-thread-title] {
-        -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 112px), transparent calc(100% - 96px));
-        mask-image: linear-gradient(90deg, #000 calc(100% - 112px), transparent calc(100% - 96px));
+        -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 146px), transparent calc(100% - 130px));
+        mask-image: linear-gradient(90deg, #000 calc(100% - 146px), transparent calc(100% - 130px));
       }
 
       .${actionButtonClass},
@@ -958,6 +1012,7 @@
   }
 
   function refreshSessionActions() {
+    if (!enhancementSettings.enabled || !enhancementSettings.inlineActions) return;
     sessionRows().forEach(attachRowActions);
     const rows = archiveRows();
     rows.forEach(attachArchiveActions);
@@ -1124,8 +1179,10 @@
   }
 
   function installScrollRestore() {
+    if (!enhancementSettings.enabled || !enhancementSettings.scrollRestore) return;
     activeScrollSessionId = currentSessionKey();
     const markUserScrollIntent = () => {
+      if (!isActiveBoot()) return;
       if (Date.now() >= restoreInProgressUntil) {
         userScrollIntentUntil = Date.now() + 1000;
       }
@@ -1133,12 +1190,15 @@
     };
     document.addEventListener("scroll", markUserScrollIntent, true);
     document.addEventListener("wheel", () => {
+      if (!isActiveBoot()) return;
       userScrollIntentUntil = Date.now() + 1200;
     }, true);
     document.addEventListener("touchmove", () => {
+      if (!isActiveBoot()) return;
       userScrollIntentUntil = Date.now() + 1200;
     }, true);
     document.addEventListener("pointerdown", (event) => {
+      if (!isActiveBoot()) return;
       const row = event.target?.closest?.(selectors.sidebarThread);
       if (!row) return;
       saveThreadScrollPosition("before_sidebar_navigation");
@@ -1156,6 +1216,9 @@
         const original = history?.[method];
         if (typeof original !== "function") return;
         history[method] = function codexPilotPatchedHistory(...args) {
+          if (!isActiveBoot()) {
+            return original.apply(this, args);
+          }
           saveThreadScrollPosition(`before_${method}`);
           const result = original.apply(this, args);
           setTimeout(() => handleThreadMaybeChanged(method), 0);
@@ -1163,12 +1226,16 @@
         };
       });
       window.addEventListener?.("popstate", () => {
+        if (!isActiveBoot()) return;
         saveThreadScrollPosition("before_popstate");
         setTimeout(() => handleThreadMaybeChanged("popstate"), 0);
       }, true);
     }
     if (typeof window.setInterval === "function") {
-      routeCheckTimer = window.setInterval(() => handleThreadMaybeChanged("interval"), 650);
+      routeCheckTimer = window.setInterval(() => {
+        if (!isActiveBoot()) return;
+        handleThreadMaybeChanged("interval");
+      }, 650);
     }
     reportRendererEvent("scroll_restore_ready", { session_id: activeScrollSessionId });
   }
@@ -1239,6 +1306,10 @@
   }
 
   function renderTimeline() {
+    if (!enhancementSettings.enabled || !enhancementSettings.timeline) {
+      removeTimeline();
+      return;
+    }
     try {
       const sessionId = currentSessionKey();
       if (!sessionId) {
@@ -1314,10 +1385,16 @@
   function backendStatusWithTimeout() {
     const request = window.__CODEX_PILOT__.backendStatus();
     if (typeof window.setTimeout !== "function") return request;
+    let timer = null;
     return Promise.race([
-      request,
+      request.then((result) => {
+        if (timer && typeof window.clearTimeout === "function") {
+          window.clearTimeout(timer);
+        }
+        return result;
+      }),
       new Promise((resolve) => {
-        window.setTimeout(() => {
+        timer = window.setTimeout(() => {
           reportRendererEvent("backend_status_timeout", {
             helper_port: window.__CODEX_PILOT__?.helperPort,
             has_bridge: typeof window.__codexPilotBridge === "function",
@@ -1328,9 +1405,45 @@
             status: "timeout",
             message: "后端检查超时"
           });
-        }, 2000);
+        }, backendStatusTimeoutMs);
       })
     ]);
+  }
+
+  async function maybeRecoverBackendBridge(result) {
+    if (result?.status !== "timeout") {
+      consecutiveBackendTimeouts = 0;
+      return;
+    }
+    consecutiveBackendTimeouts += 1;
+    if (consecutiveBackendTimeouts < backendRecoveryThreshold || recoveryInFlight) {
+      return;
+    }
+    const now = Date.now();
+    if (now - lastRecoveryAttemptAt < backendRecoveryCooldownMs) {
+      return;
+    }
+    lastRecoveryAttemptAt = now;
+    recoveryInFlight = true;
+    reportRendererEvent("backend_recovery_requested", {
+      consecutive_timeouts: consecutiveBackendTimeouts,
+      helper_port: window.__CODEX_PILOT__?.helperPort,
+      has_bridge: typeof window.__codexPilotBridge === "function"
+    });
+    try {
+      const recovery = await window.__CODEX_PILOT__.recoverBridge();
+      reportRendererEvent("backend_recovery_result", {
+        status: recovery?.status || "unknown",
+        message: recovery?.message || ""
+      });
+      if (recovery?.status === "ok") {
+        consecutiveBackendTimeouts = 0;
+      }
+    } catch (error) {
+      reportRendererEvent("backend_recovery_error", { message: String(error) });
+    } finally {
+      recoveryInFlight = false;
+    }
   }
 
   async function refreshBackendStatus(root, message) {
@@ -1342,6 +1455,7 @@
       if (seq !== backendStatusCheckSeq) return;
       root.dataset.status = result.status === "ok" ? "connected" : "unknown";
       message.textContent = formatBackendStatusMessage(result);
+      maybeRecoverBackendBridge(result);
       if (result.status !== "ok") {
         reportRendererEvent("backend_status_error", {
           status: result.status || "unknown",
@@ -1352,6 +1466,7 @@
       if (seq !== backendStatusCheckSeq) return;
       root.dataset.status = "unknown";
       message.textContent = String(error);
+      consecutiveBackendTimeouts = 0;
       reportRendererEvent("backend_status_error", { message: String(error) });
     }
   }
@@ -1360,6 +1475,11 @@
     refreshBackendStatus(root, message);
     if (typeof window.setInterval !== "function" || window.__codexPilotBackendStatusHeartbeat) return;
     window.__codexPilotBackendStatusHeartbeat = window.setInterval(() => {
+      if (!isActiveBoot() || !root.isConnected) {
+        window.clearInterval?.(window.__codexPilotBackendStatusHeartbeat);
+        delete window.__codexPilotBackendStatusHeartbeat;
+        return;
+      }
       refreshBackendStatus(root, message);
     }, 5000);
   }
@@ -1369,6 +1489,9 @@
   }
 
   function createMenu() {
+    if (!enhancementSettings.enabled) {
+      return;
+    }
     if (document.getElementById(rootId)) {
       return;
     }
@@ -1483,34 +1606,47 @@
   }
 
   function startRefreshLoop() {
-    refreshSessionActions();
-    installScrollRestore();
-    refreshTimelineSoon();
+    if (enhancementSettings.inlineActions) refreshSessionActions();
+    if (enhancementSettings.scrollRestore) installScrollRestore();
+    if (enhancementSettings.timeline) refreshTimelineSoon();
     if (typeof MutationObserver === "function") {
       const observer = new MutationObserver(() => {
-        refreshSessionActions();
-        refreshTimelineSoon();
+        if (!isActiveBoot()) {
+          observer.disconnect();
+          return;
+        }
+        if (enhancementSettings.inlineActions) refreshSessionActions();
+        if (enhancementSettings.timeline) refreshTimelineSoon();
       });
       observer.observe(document.body, { childList: true, subtree: true });
     }
     if (typeof window.setInterval === "function") {
       window.setInterval(() => {
-        refreshSessionActions();
-        renderTimeline();
+        if (!isActiveBoot()) return;
+        if (enhancementSettings.inlineActions) refreshSessionActions();
+        if (enhancementSettings.timeline) renderTimeline();
       }, 1500);
     }
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => {
+  async function bootCodexPilot() {
+    await loadEnhancementSettings();
+    if (!enhancementSettings.enabled) {
+      reportRendererEvent("enhancement_disabled", {});
+      return;
+    }
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => {
+        createMenu();
+        startRefreshLoop();
+      }, { once: true });
+    } else {
       createMenu();
       startRefreshLoop();
-    }, { once: true });
-  } else {
-    createMenu();
-    startRefreshLoop();
+    }
+    reportRendererEvent("loaded", { helper_port: helperPort, enhancement_settings: enhancementSettings });
   }
 
-  reportRendererEvent("loaded", { helper_port: helperPort });
+  bootCodexPilot();
   console.info("[CodexPilot] renderer script loaded", window.__CODEX_PILOT__);
 })();

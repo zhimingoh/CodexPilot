@@ -23,6 +23,7 @@ class MiniElement {
     this.id = "";
     this.title = "";
     this.style = {};
+    this.isConnected = true;
     this.offsetTop = 0;
     this.scrollTop = 0;
     this.scrollHeight = 1200;
@@ -50,6 +51,7 @@ class MiniElement {
 
   appendChild(node) {
     node.parentElement = this;
+    node.isConnected = true;
     this.children.push(node);
     return node;
   }
@@ -60,6 +62,7 @@ class MiniElement {
     const index = siblings.indexOf(this);
     if (index >= 0) siblings.splice(index, 1);
     this.parentElement = null;
+    this.isConnected = false;
   }
 
   addEventListener(type, handler) {
@@ -238,7 +241,7 @@ function makeMessage({ text, role = "user", testId = "", className = "", offsetT
   return message;
 }
 
-function createFixture({ includeOther = true, messages } = {}) {
+function createFixture({ backendStatusMode = "ok", includeOther = true, messages } = {}) {
   const document = new MiniDocument();
   const selected = makeThreadRow("thread-selected-12345", "测试对话", true);
   const other = includeOther ? makeThreadRow("thread-other-12345", "其他对话", false) : null;
@@ -255,6 +258,7 @@ function createFixture({ includeOther = true, messages } = {}) {
   const storage = new Map();
   const mutationObservers = [];
   const navigationClicks = [];
+  const timeoutQueue = [];
   class FixtureMutationObserver {
     constructor(callback) {
       this.callback = callback;
@@ -286,9 +290,14 @@ function createFixture({ includeOther = true, messages } = {}) {
       innerHeight: 420,
       scrollY: 0,
       setTimeout(callback, delay = 0) {
-        if (typeof callback === "function" && Number(delay) < 1000) callback();
+        if (typeof callback === "function" && Number(delay) < 1000) {
+          callback();
+        } else if (typeof callback === "function") {
+          timeoutQueue.push({ callback, delay });
+        }
         return 1;
       },
+      clearTimeout() {},
       setInterval(callback, delay = 0) {
         intervals.push({ callback, delay });
         return intervals.length;
@@ -342,6 +351,26 @@ function createFixture({ includeOther = true, messages } = {}) {
             }
           });
         }
+        if (path === "/enhancement/settings") {
+          return Promise.resolve({
+            status: "ok",
+            result: {
+              enabled: true,
+              timeline: true,
+              inlineActions: true,
+              scrollRestore: true
+            }
+          });
+        }
+        if (path === "/backend/status" && backendStatusMode === "timeout") {
+          return new Promise(() => {});
+        }
+        if (path === "/backend/recover-bridge") {
+          return Promise.resolve({
+            status: "ok",
+            message: "CodexPilot bridge 已重新注入"
+          });
+        }
         if (path === "/session/undo") {
           return Promise.resolve({
             status: "ok",
@@ -373,10 +402,11 @@ function createFixture({ includeOther = true, messages } = {}) {
   context.window.document = document;
   context.window.history = context.history;
   vm.runInNewContext(source, context, { filename: "renderer-inject.js" });
-  return { bridgeCalls, confirmMessages, context, document, intervals, messages: threadMessages, mutationObservers, navigationClicks, navigationStateByCall, other, selected };
+  return { bridgeCalls, confirmMessages, context, document, intervals, messages: threadMessages, mutationObservers, navigationClicks, navigationStateByCall, other, selected, timeoutQueue };
 }
 
 async function deleteSelected(fixture) {
+  await flushAsyncWork();
   const rowDeleteButton = fixture.selected.row.querySelectorAll("button")
     .find((button) => button.getAttribute("aria-label") === "删除会话");
   assert.ok(rowDeleteButton, "应在会话行添加删除按钮");
@@ -451,7 +481,7 @@ async function flushAsyncWork() {
   assert.ok(rowActionGroup, "应创建独立的会话行操作组");
   assert.equal(rowActionGroup.children.length, 2, "会话行操作组只包含 CodexPilot 自己的按钮");
   const styleText = document.getElementById("codex-pilot-style").textContent;
-  assert.match(styleText, /right:\s*42px;/, "会话行操作组应避开 Codex 原生右侧按钮");
+  assert.match(styleText, /right:\s*76px;/, "会话行操作组应避开 Codex 原生右侧按钮");
   assert.match(styleText, /mask-image:\s*linear-gradient/, "悬停时应遮罩标题，避免文字与操作按钮重叠");
 
   const timeline = document.getElementById("codex-pilot-timeline");
@@ -510,8 +540,42 @@ async function flushAsyncWork() {
       makeMessage({ text: "只有一个问题", offsetTop: 120 })
     ]
   });
+  await flushAsyncWork();
   assert.equal(fixture.document.getElementById("codex-pilot-timeline"), null, "只有一个用户问题时不应显示时间线");
   assert.ok(fixture.bridgeCalls.some((call) => call.payload?.event === "timeline_no_targets"));
+}
+
+{
+  const fixture = createFixture({ backendStatusMode: "timeout" });
+  await flushAsyncWork();
+  const heartbeat = fixture.intervals.find((item) => item.delay === 5000);
+  assert.ok(heartbeat, "应启动后端状态心跳");
+  for (let index = 0; index < 3; index += 1) {
+    if (fixture.timeoutQueue.length === 0) {
+      heartbeat.callback();
+      await flushAsyncWork();
+    }
+    const timeout = fixture.timeoutQueue.shift();
+    assert.ok(timeout, "应登记后端状态超时定时器");
+    timeout.callback();
+    await flushAsyncWork();
+    if (index < 2) {
+      heartbeat.callback();
+      await flushAsyncWork();
+    }
+  }
+  assert.ok(
+    fixture.bridgeCalls.some((call) => call.path === "/diagnostics/report" && call.payload?.event === "backend_recovery_requested"),
+    "连续超时后应记录恢复请求"
+  );
+  assert.ok(
+    fixture.bridgeCalls.some((call) => call.path === "/backend/recover-bridge"),
+    "连续超时后应请求重新注入 bridge"
+  );
+  assert.ok(
+    fixture.bridgeCalls.some((call) => call.path === "/diagnostics/report" && call.payload?.event === "backend_recovery_result"),
+    "恢复请求应写入结果诊断"
+  );
 }
 
 {
@@ -522,6 +586,7 @@ async function flushAsyncWork() {
       makeMessage({ text: "用户: 第二个问题", role: "", testId: "conversation-turn", offsetTop: 760 })
     ]
   });
+  await flushAsyncWork();
   const markers = fixture.document.querySelectorAll(".codex-pilot-timeline-marker");
   assert.equal(markers.length, 2, "conversation-turn fallback 应只保留用户轮次");
   assert.equal(markers[1].querySelector(".codex-pilot-timeline-tooltip").textContent, "用户: 第二个问题");
@@ -529,6 +594,7 @@ async function flushAsyncWork() {
 
 {
   const fixture = createFixture();
+  await flushAsyncWork();
   const originalTimeline = fixture.document.getElementById("codex-pilot-timeline");
   assert.ok(originalTimeline, "初次渲染应创建时间线");
   fixture.mutationObservers.forEach((observer) => observer.trigger());
