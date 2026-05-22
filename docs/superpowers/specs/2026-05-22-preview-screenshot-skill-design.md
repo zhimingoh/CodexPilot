@@ -122,12 +122,17 @@ The skill should instruct the agent to:
 The skill should define lightweight but strict capture rules:
 
 - capture the intended page state, not a transitional state
+- set the in-app browser viewport large enough for the intended UI before
+  capture when the page depends on a larger fixed layout
 - avoid visible browser chrome or unrelated UI noise when the task is about the
   page itself
 - avoid translation banners, account menus, extension popups, and unrelated
   overlays
 - prefer semantically complete page captures over random cropped fragments,
   unless the user explicitly requests a cropped detail
+- do not default to viewport-only screenshots when the requested result is a
+  complete single-page image; prefer full-page capture or a precise main-panel
+  clip
 - if multiple related pages are requested, capture them as individually named
   files instead of overwriting or using timestamp-only names
 
@@ -167,6 +172,11 @@ targets:
 
 When the user asks broadly for "这几个页面截一下", the skill should bias
 toward these known top-level views before inventing deeper navigation.
+
+The skill should also document that the current manager preview behaves like a
+fixed application canvas. The default capture logic should therefore account
+for viewport size before taking screenshots, so right-side actions and
+lower-page content are not accidentally cropped.
 
 ## Error Handling
 
