@@ -3,7 +3,10 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::Manager;
+
+const MANAGER_INJECT_TIMEOUT: Duration = Duration::from_secs(25);
 
 struct ManagerState {
     launch_state: Mutex<LaunchState>,
@@ -361,7 +364,7 @@ async fn inject_existing_codex(
         let mut current = state.launch_state.lock().map_err(|_| "启动状态锁已损坏")?;
         *current = LaunchState::Launching;
     }
-    match codex_pilot_core::launcher::inject_running_codex(debug_port, helper_port).await {
+    match inject_running_codex_for_manager(debug_port, helper_port).await {
         Ok(()) => {
             codex_pilot_core::status::write_status(&codex_pilot_core::status::BackendStatus {
                 status: "running".to_string(),
@@ -377,6 +380,63 @@ async fn inject_existing_codex(
             if let Ok(mut current) = state.launch_state.lock() {
                 *current = LaunchState::Failed(message.clone());
             }
+            Err(message)
+        }
+    }
+}
+
+async fn inject_running_codex_for_manager(debug_port: u16, helper_port: u16) -> Result<(), String> {
+    append_diagnostic_event(
+        "manager.inject_existing_start",
+        json!({
+            "debug_port": debug_port,
+            "helper_port": helper_port,
+            "timeout_ms": MANAGER_INJECT_TIMEOUT.as_millis()
+        }),
+    )?;
+
+    let result = tokio::time::timeout(
+        MANAGER_INJECT_TIMEOUT,
+        codex_pilot_core::launcher::inject_running_codex(debug_port, helper_port),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(())) => {
+            append_diagnostic_event(
+                "manager.inject_existing_ok",
+                json!({
+                    "debug_port": debug_port,
+                    "helper_port": helper_port
+                }),
+            )?;
+            Ok(())
+        }
+        Ok(Err(error)) => {
+            let message = error.to_string();
+            append_diagnostic_event(
+                "manager.inject_existing_failed",
+                json!({
+                    "debug_port": debug_port,
+                    "helper_port": helper_port,
+                    "message": message
+                }),
+            )?;
+            Err(message)
+        }
+        Err(_) => {
+            let message = format!(
+                "注入 CodexPilot 超时，已等待 {} 秒。请查看诊断后手动重试或重启并注入。",
+                MANAGER_INJECT_TIMEOUT.as_secs()
+            );
+            append_diagnostic_event(
+                "manager.inject_existing_timeout",
+                json!({
+                    "debug_port": debug_port,
+                    "helper_port": helper_port,
+                    "timeout_ms": MANAGER_INJECT_TIMEOUT.as_millis()
+                }),
+            )?;
             Err(message)
         }
     }
@@ -1546,6 +1606,7 @@ mod tests {
                     base_url: "https://one.example/v1".to_string(),
                     bearer_token: "sk-one".to_string(),
                     mode: ProviderProfileMode::HybridApi,
+                    upstream_protocol: default_upstream_protocol(),
                 },
                 ProviderProfile {
                     id: "p2".to_string(),
@@ -1553,6 +1614,7 @@ mod tests {
                     base_url: "https://two.example/v1".to_string(),
                     bearer_token: "sk-two".to_string(),
                     mode: ProviderProfileMode::Api,
+                    upstream_protocol: default_upstream_protocol(),
                 },
             ],
         };

@@ -5,8 +5,8 @@
 Active with one constraint: automatic launch is an opt-in manager preference,
 not the default startup behavior. CodexPilot remains one visible app and
 `codex-pilot-launcher` remains an internal sidecar. The manager may trigger the
-same launch/reinject command used by the manual button after startup, but only
-for states that do not close an existing Codex window.
+same launch command used by the manual button after startup, but only when no
+Codex window is already running.
 
 ## Goal
 
@@ -32,9 +32,11 @@ preferences as app path and ports.
 When the switch is off, opening CodexPilot only refreshes status. Users launch,
 reinject, restart, and save preferences from the manager UI.
 
-When the switch is on, opening CodexPilot silently starts or reinjects Codex
-when that can be done without closing an existing Codex window. Startup failures
-remain visible through the normal message and launch status surfaces.
+When the switch is on, opening CodexPilot silently starts Codex only when Codex
+is not already running. If Codex is already open, even with a reachable debug
+port, the manager skips automatic injection and opens the management UI. Users
+can then choose the explicit manual reinject action. Startup failures remain
+visible through the normal message and launch status surfaces.
 
 ## Architecture
 
@@ -49,7 +51,7 @@ to trigger the existing backend launch command once.
 
 The frontend should not duplicate launch logic. It should call a backend command
 for explicit launch/reinject actions and for safe automatic launch. It must not
-call the restart command automatically.
+call reinject or restart automatically when a Codex window is already running.
 
 ## Startup Flow
 
@@ -60,7 +62,8 @@ call the restart command automatically.
 5. If `autoLaunchOnOpen` is on, the frontend triggers at most one automatic
    action per manager page load:
    - helper already running: mark as running and do not spawn another launcher.
-   - debug port reachable: reinject.
+   - debug port reachable: skip automatic injection and keep the manager UI
+     ready for a manual reinject.
    - no Codex running: spawn the sidecar launcher.
    - unrelated Codex already running: surface the current "restart required"
      state instead of killing it automatically.
@@ -97,8 +100,10 @@ No user-facing launcher app, shortcut, or second product name is added.
 - Unit-test launch preference serialization.
 - Verify opening the manager does not launch Codex automatically when the switch
   is off.
-- Verify opening the manager launches or reinjects Codex once when the switch is
-  on and the state is safe.
+- Verify opening the manager launches Codex once when the switch is on and no
+  Codex window is running.
+- Verify opening the manager does not automatically reinject when Codex is
+  already running with a reachable debug port.
 - Verify opening the manager does not restart an unrelated running Codex.
 - Keep the frontend auto-launch decision in a small unit-tested module so these
   branches can be checked without spawning Codex.

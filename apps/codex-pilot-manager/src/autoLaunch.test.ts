@@ -44,13 +44,11 @@ expectEqual(
     launching: false,
   }),
   {
-    kind: "run",
+    kind: "stop",
     markAttempted: true,
-    command: "reinject_codex",
-    progress: "正在自动重新注入 CodexPilot",
-    message: "正在自动重新注入 CodexPilot",
+    message: "Codex 已运行，已跳过自动注入；需要时可手动重新注入",
   },
-  "reinjects once when auto launch is enabled and debug port is reachable",
+  "does not automatically inject into an already running Codex",
 );
 
 expectEqual(

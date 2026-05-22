@@ -18,3 +18,4 @@ codex-pilot-data = { path = "../../../crates/codex-pilot-data" }
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2.0.0", features = [] }
+tokio.workspace = true

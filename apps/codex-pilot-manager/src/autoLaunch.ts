@@ -8,7 +8,7 @@ export type AutoLaunchInput = {
 export type AutoLaunchDecision =
   | { kind: "skip"; markAttempted: false; message?: undefined; command?: undefined; progress?: undefined }
   | { kind: "stop"; markAttempted: true; message?: string; command?: undefined; progress?: undefined }
-  | { kind: "run"; markAttempted: true; command: "launch_codex" | "reinject_codex"; progress: string; message: string };
+  | { kind: "run"; markAttempted: true; command: "launch_codex"; progress: string; message: string };
 
 export function resolveAutoLaunchAction(input: AutoLaunchInput): AutoLaunchDecision {
   if (input.launching || input.alreadyAttempted || !input.autoLaunchOnOpen) {
@@ -27,13 +27,10 @@ export function resolveAutoLaunchAction(input: AutoLaunchInput): AutoLaunchDecis
   }
 
   if (input.actionKind === "reinject") {
-    const progress = "正在自动重新注入 CodexPilot";
     return {
-      kind: "run",
+      kind: "stop",
       markAttempted: true,
-      command: "reinject_codex",
-      progress,
-      message: progress,
+      message: "Codex 已运行，已跳过自动注入；需要时可手动重新注入",
     };
   }
 
