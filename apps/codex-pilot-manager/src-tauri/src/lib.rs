@@ -106,6 +106,27 @@ struct ProviderSnapshot {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct CcsProviderSnapshot {
+    db_path: String,
+    available_count: usize,
+    importable_count: usize,
+    status: String,
+    message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CcsImportResult {
+    imported_count: usize,
+    skipped_count: usize,
+    renamed_count: usize,
+    provider: ProviderSnapshot,
+    ccs: CcsProviderSnapshot,
+    message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ProviderSyncSnapshot {
     target_provider: String,
     current_provider: String,
@@ -158,7 +179,7 @@ impl ProviderProfileMode {
     fn label(self) -> &'static str {
         match self {
             ProviderProfileMode::HybridApi => "混合中转",
-            ProviderProfileMode::Api => "无账号",
+            ProviderProfileMode::Api => "传统中转",
         }
     }
 }
@@ -552,6 +573,72 @@ fn provider_snapshot() -> ProviderSnapshot {
 }
 
 #[tauri::command]
+fn ccs_provider_snapshot() -> CcsProviderSnapshot {
+    ccs_provider_snapshot_for_state(&load_provider_profiles())
+}
+
+#[tauri::command]
+fn import_ccs_provider_profiles() -> Result<CcsImportResult, String> {
+    let mut state = load_provider_profiles();
+    let candidates = codex_pilot_core::ccs_import::list_codex_providers_from_default_db()
+        .map_err(|error| format!("读取 CCSwitch 配置失败：{error}"))?;
+
+    let mut imported_count = 0usize;
+    let mut skipped_count = 0usize;
+    let mut renamed_count = 0usize;
+    let mut next_profiles = state.profiles.clone();
+
+    for candidate in candidates {
+        let mode = ProviderProfileMode::Api;
+        if next_profiles
+            .iter()
+            .any(|profile| profiles_equivalent(profile, &candidate, mode))
+        {
+            skipped_count += 1;
+            continue;
+        }
+
+        let unique_name = unique_imported_profile_name(&next_profiles, &candidate.name);
+        if !unique_name.eq(candidate.name.trim()) {
+            renamed_count += 1;
+        }
+        next_profiles.push(ProviderProfile {
+            id: unique_profile_id(&next_profiles),
+            name: unique_name,
+            base_url: candidate.base_url.trim().to_string(),
+            bearer_token: candidate.api_key.trim().to_string(),
+            mode,
+            upstream_protocol: candidate.upstream_protocol,
+        });
+        imported_count += 1;
+    }
+
+    if imported_count > 0 {
+        state.profiles = next_profiles;
+        save_provider_profiles_to_path(&provider_profiles_path(), &state)?;
+    }
+
+    let provider = provider_snapshot();
+    let ccs = ccs_provider_snapshot_for_state(&load_provider_profiles());
+    let message = if imported_count == 0 {
+        "没有新的 CCSwitch 配置需要导入。".to_string()
+    } else {
+        format!(
+            "已导入 {imported_count} 个 CCSwitch 配置，跳过 {skipped_count} 个，重命名 {renamed_count} 个。"
+        )
+    };
+
+    Ok(CcsImportResult {
+        imported_count,
+        skipped_count,
+        renamed_count,
+        provider,
+        ccs,
+        message,
+    })
+}
+
+#[tauri::command]
 async fn apply_provider(request: ProviderApplyRequest) -> Result<String, String> {
     let profiles = load_provider_profiles();
     let profile = profile_by_id(&profiles, request.profile_id.as_deref())?;
@@ -575,7 +662,7 @@ async fn apply_provider(request: ProviderApplyRequest) -> Result<String, String>
                     &bearer_token,
                     upstream_protocol,
                 )
-                .map_err(|error| format!("应用无账号通道失败：{error}"))?
+                .map_err(|error| format!("应用传统中转失败：{error}"))?
             }
         };
         Ok(result
@@ -927,6 +1014,8 @@ pub fn run() {
             enhancement_settings_snapshot,
             save_enhancement_settings,
             provider_snapshot,
+            ccs_provider_snapshot,
+            import_ccs_provider_profiles,
             apply_provider,
             save_provider_profile,
             activate_provider_profile,
@@ -1298,6 +1387,49 @@ fn save_provider_profiles_to_path(
     std::fs::write(path, contents).map_err(|error| format!("写入中转配置档失败：{error}"))
 }
 
+fn ccs_provider_snapshot_for_state(state: &ProviderProfilesState) -> CcsProviderSnapshot {
+    let db_path = codex_pilot_core::ccs_import::default_ccs_db_path();
+    match codex_pilot_core::ccs_import::list_codex_providers_from_db(&db_path) {
+        Ok(candidates) => {
+            let available_count = candidates.len();
+            let importable_count = candidates
+                .iter()
+                .filter(|candidate| {
+                    !state.profiles.iter().any(|profile| {
+                        profiles_equivalent(profile, candidate, ProviderProfileMode::Api)
+                    })
+                })
+                .count();
+            let (status, message) = if available_count == 0 {
+                if db_path.exists() {
+                    ("empty".to_string(), "未发现 CCSwitch Codex 配置。".to_string())
+                } else {
+                    ("missing".to_string(), "未找到 CCSwitch 数据库。".to_string())
+                }
+            } else {
+                (
+                    "ready".to_string(),
+                    format!("已发现 {importable_count} 个可导入配置。"),
+                )
+            };
+            CcsProviderSnapshot {
+                db_path: db_path.to_string_lossy().to_string(),
+                available_count,
+                importable_count,
+                status,
+                message,
+            }
+        }
+        Err(error) => CcsProviderSnapshot {
+            db_path: db_path.to_string_lossy().to_string(),
+            available_count: 0,
+            importable_count: 0,
+            status: "error".to_string(),
+            message: format!("读取 CCSwitch 配置失败：{error}"),
+        },
+    }
+}
+
 fn profile_by_id(
     state: &ProviderProfilesState,
     id: Option<&str>,
@@ -1373,6 +1505,68 @@ fn sanitize_provider_profiles_state(
         state.active_profile_id = state.profiles[0].id.clone();
     }
     Ok(state)
+}
+
+fn profiles_equivalent(
+    profile: &ProviderProfile,
+    candidate: &codex_pilot_core::ccs_import::CcsProviderCandidate,
+    mode: ProviderProfileMode,
+) -> bool {
+    profile.mode == mode
+        && profile.upstream_protocol == candidate.upstream_protocol
+        && normalize_compare_text(&profile.name) == normalize_compare_text(&candidate.name)
+        && normalize_base_url(&profile.base_url) == normalize_base_url(&candidate.base_url)
+}
+
+fn unique_imported_profile_name(existing: &[ProviderProfile], original_name: &str) -> String {
+    let base = original_name.trim();
+    if base.is_empty() {
+        return unique_imported_profile_name(existing, "CCS 配置");
+    }
+    if !existing
+        .iter()
+        .any(|profile| normalize_compare_text(&profile.name) == normalize_compare_text(base))
+    {
+        return base.to_string();
+    }
+
+    let first_candidate = format!("{base} (CCS)");
+    if !existing.iter().any(|profile| {
+        normalize_compare_text(&profile.name) == normalize_compare_text(&first_candidate)
+    }) {
+        return first_candidate;
+    }
+
+    let mut index = 2usize;
+    loop {
+        let candidate = format!("{base} (CCS {index})");
+        if !existing
+            .iter()
+            .any(|profile| normalize_compare_text(&profile.name) == normalize_compare_text(&candidate))
+        {
+            return candidate;
+        }
+        index += 1;
+    }
+}
+
+fn unique_profile_id(existing: &[ProviderProfile]) -> String {
+    let mut next_id = format!("profile-{}", now_nanos());
+    while existing.iter().any(|profile| profile.id == next_id) {
+        next_id = format!("profile-{}", now_nanos());
+    }
+    next_id
+}
+
+fn normalize_compare_text(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn normalize_base_url(value: &str) -> String {
+    value
+        .trim()
+        .trim_end_matches('/')
+        .to_ascii_lowercase()
 }
 
 fn load_launch_preferences() -> LaunchPreferences {

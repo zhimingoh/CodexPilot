@@ -56,6 +56,13 @@ const commandHandlers: Record<string, MockCommandHandler> = {
     ],
     activeProfileId: "team-relay",
   }),
+  ccs_provider_snapshot: () => ({
+    dbPath: "/Users/huanglin/.cc-switch/cc-switch.db",
+    availableCount: 3,
+    importableCount: 2,
+    status: "ready",
+    message: "已发现 2 个可导入配置。",
+  }),
   recycle_bin_snapshot: () => ({
     entries: [
       {
@@ -149,6 +156,20 @@ const commandHandlers: Record<string, MockCommandHandler> = {
   activate_provider_profile: () => "预览模式：配置档已切换",
   delete_provider_profile: () => "预览模式：配置档已删除",
   clear_provider: () => "预览模式：已切换为官方通道",
+  import_ccs_provider_profiles: () => ({
+    importedCount: 2,
+    skippedCount: 1,
+    renamedCount: 1,
+    provider: commandHandlers.provider_snapshot(),
+    ccs: {
+      dbPath: "/Users/huanglin/.cc-switch/cc-switch.db",
+      availableCount: 3,
+      importableCount: 0,
+      status: "ready",
+      message: "已发现 0 个可导入配置。",
+    },
+    message: "预览模式：已导入 2 个 CCSwitch 配置，跳过 1 个，重命名 1 个。",
+  }),
   sync_provider_sessions: () => "预览模式：Provider Sync 完成，目标 CodexPilot，会话文件 18 个，数据库行 19 条。",
   restore_recycle_bin_entries: () => ({
     message: "预览模式：已恢复所选会话",
