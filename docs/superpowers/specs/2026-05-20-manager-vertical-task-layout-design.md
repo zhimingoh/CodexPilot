@@ -108,8 +108,19 @@ Contains checks and logs. This page can stay utility-first.
 - Keep the UI restrained and operational.
 - Use fewer large panels on the overview page.
 - Prefer compact task cards with clear headers, status rows, and action areas.
+- The overview may vary task density by priority: launch can remain the primary
+  task panel, provider can use a medium task block, and session maintenance plus
+  diagnostics can use lighter summary rows. Do not put launch command previews or
+  save-preference controls on the overview; those belong in Launch & Injection.
 - Avoid nested cards.
 - Avoid making maintenance tools visually equal to the primary launch/provider flow.
+
+## Related Specs
+
+- `2026-05-22-manager-title-hierarchy-design.md` defines the page-title versus
+  card-title hierarchy, the shared `panelHeader` structure for regular panels,
+  and the label updates such as `当前状态` to `通道状态` and `检查项` to
+  `运行检查`.
 
 ## Acceptance Criteria
 
