@@ -39,11 +39,23 @@ The Timeline is hidden when:
 The Timeline should detect user prompt nodes from the live Codex page DOM. The first implementation should keep a selector fallback list, ordered from most semantic to least specific:
 
 - `[data-message-author-role='user']`
+- `[data-author-role='user']`
 - `[data-testid*='conversation-turn']`
+- `[data-testid*='conversation']`
 - `[data-testid*='user-message']`
+- `[data-testid*='message']`
 - `[class*='user-message']`
+- `[class*='prompt']`
+- `[class*='conversation']`
+- `[data-message-id]`
+- `article`
+- `[role='article']`
 
 For each candidate, CodexPilot extracts normalized text, removes CodexPilot action labels, requires at least two visible characters, and ignores nodes with zero-height boxes when layout information is available.
+
+Because Codex DOM structure can vary between builds, selector matching alone is not sufficient. The implementation may also inspect a small ancestor window for role signals such as `data-message-author-role`, `data-author-role`, `data-role`, `data-testid`, `aria-label`, `aria-roledescription`, and class names. Assistant-like role signals should exclude a candidate even when the selector matches broadly.
+
+The implementation should also reject unreasonable container nodes, for example oversized wrappers that contain too many nested conversation blocks, so the Timeline stays attached to prompt-level nodes rather than whole-page shells.
 
 The implementation should cap candidates to a reasonable limit, currently 80, so large threads do not produce excessive DOM work or unreadable marker density.
 

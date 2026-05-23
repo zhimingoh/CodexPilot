@@ -365,17 +365,12 @@
         opacity: 0;
         pointer-events: none;
         position: absolute;
-        right: 56px;
+        right: 108px;
         top: 50%;
         padding: 0;
         transform: translateY(-50%);
         transition: opacity 120ms ease;
         z-index: 20;
-      }
-
-      .${actionGroupClass}[data-open="true"] {
-        opacity: 1;
-        pointer-events: auto;
       }
 
       [data-codex-pilot-row="true"]:hover .${actionGroupClass},
@@ -386,8 +381,8 @@
 
       [data-codex-pilot-row="true"]:hover [data-thread-title],
       [data-codex-pilot-row="true"]:focus-within [data-thread-title] {
-        -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 74px), transparent calc(100% - 58px));
-        mask-image: linear-gradient(90deg, #000 calc(100% - 74px), transparent calc(100% - 58px));
+        -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 132px), transparent calc(100% - 116px));
+        mask-image: linear-gradient(90deg, #000 calc(100% - 132px), transparent calc(100% - 116px));
       }
 
       .${actionButtonClass},
@@ -404,69 +399,6 @@
         justify-content: center;
         padding: 0;
         width: 26px;
-      }
-
-      .codex-pilot-row-action-trigger {
-        align-items: center;
-        background: rgba(255, 255, 255, 0.76);
-        border: 1px solid rgba(148, 163, 184, 0.42);
-        border-radius: 999px;
-        box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
-        color: #6b7788;
-        cursor: pointer;
-        display: inline-flex;
-        height: 22px;
-        justify-content: center;
-        padding: 0;
-        width: 22px;
-      }
-
-      .codex-pilot-row-action-trigger:hover,
-      .${actionGroupClass}[data-open="true"] .codex-pilot-row-action-trigger {
-        background: rgba(255, 255, 255, 0.92);
-        border-color: rgba(100, 116, 139, 0.5);
-        color: #324155;
-      }
-
-      .codex-pilot-row-action-trigger svg {
-        display: block;
-        height: 13px;
-        pointer-events: none;
-        width: 13px;
-      }
-
-      .codex-pilot-row-action-panel {
-        align-items: center;
-        background: rgba(255, 255, 255, 0.96);
-        border: 1px solid rgba(203, 213, 225, 0.96);
-        border-radius: 999px;
-        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.16);
-        display: inline-flex;
-        gap: 6px;
-        opacity: 0;
-        padding: 4px 6px;
-        pointer-events: none;
-        position: absolute;
-        top: 50%;
-        transform: translateY(-50%) scale(0.98);
-        transition: opacity 120ms ease, transform 120ms ease;
-        white-space: nowrap;
-      }
-
-      .${actionGroupClass}[data-side="right"] .codex-pilot-row-action-panel {
-        left: calc(100% + 8px);
-      }
-
-      .${actionGroupClass}[data-side="left"] .codex-pilot-row-action-panel {
-        right: calc(100% + 8px);
-      }
-
-      .${actionGroupClass}[data-open="true"] .codex-pilot-row-action-panel,
-      [data-codex-pilot-row="true"]:hover .codex-pilot-row-action-panel,
-      [data-codex-pilot-row="true"]:focus-within .codex-pilot-row-action-panel {
-        opacity: 1;
-        pointer-events: auto;
-        transform: translateY(-50%) scale(1);
       }
 
       .${actionButtonClass}:hover,
@@ -786,55 +718,6 @@
     button.addEventListener("click", onActivate, true);
   }
 
-  function setRowActionGroupOpen(group, open) {
-    if (!group) return;
-    group.dataset.open = open ? "true" : "false";
-  }
-
-  function closeOtherRowActionGroups(activeGroup) {
-    document.querySelectorAll(`.${actionGroupClass}[data-open="true"]`).forEach((node) => {
-      if (node !== activeGroup) {
-        node.dataset.open = "false";
-      }
-    });
-  }
-
-  function layoutRowActionGroup(group) {
-    if (!group) return;
-    const panel = group.querySelector(".codex-pilot-row-action-panel");
-    if (!panel) return;
-    group.dataset.side = "right";
-    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-    const rect = panel.getBoundingClientRect();
-    if (rect.right > viewportWidth - 12) {
-      group.dataset.side = "left";
-    }
-  }
-
-  function installRowActionGroupEvents(group) {
-    if (!group || group.dataset.eventsBound === "true") return;
-    group.dataset.eventsBound = "true";
-    const trigger = group.querySelector(".codex-pilot-row-action-trigger");
-    if (!trigger) return;
-    installRowActionEvents(trigger, (event) => {
-      stopRowActionEvent(event);
-      const nextOpen = group.dataset.open !== "true";
-      closeOtherRowActionGroups(group);
-      setRowActionGroupOpen(group, nextOpen);
-      if (nextOpen) {
-        layoutRowActionGroup(group);
-      }
-    });
-    group.addEventListener("mouseleave", () => setRowActionGroupOpen(group, false));
-    group.addEventListener("focusout", () => {
-      window.setTimeout(() => {
-        if (!group.contains(document.activeElement)) {
-          setRowActionGroupOpen(group, false);
-        }
-      }, 0);
-    });
-  }
-
   function setIconButtonContent(button, label, svgPath) {
     button.setAttribute("aria-label", label);
     button.title = label;
@@ -959,20 +842,6 @@
     row.dataset.codexPilotRow = "true";
     const group = document.createElement("div");
     group.className = actionGroupClass;
-    group.dataset.open = "false";
-    group.dataset.side = "right";
-
-    const trigger = document.createElement("button");
-    trigger.type = "button";
-    trigger.className = "codex-pilot-row-action-trigger";
-    setIconButtonContent(
-      trigger,
-      "更多 Pilot 操作",
-      '<circle cx="12" cy="12" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/>'
-    );
-
-    const panel = document.createElement("div");
-    panel.className = "codex-pilot-row-action-panel";
 
     const exportButton = document.createElement("button");
     exportButton.type = "button";
@@ -1001,9 +870,7 @@
       await deleteSession(session, row);
     });
 
-    panel.append(exportButton, deleteButton);
-    group.append(trigger, panel);
-    installRowActionGroupEvents(group);
+    group.append(exportButton, deleteButton);
     row.appendChild(group);
   }
 
@@ -1380,21 +1247,78 @@
       .slice(0, 120);
   }
 
-  function isLikelyUserMessageNode(node) {
+  function timelineRoleSignal(node) {
+    const samples = [];
+    let current = node;
+    let depth = 0;
+    while (current && depth < 4) {
+      const attrs = [
+        current.getAttribute?.("data-message-author-role"),
+        current.getAttribute?.("data-author-role"),
+        current.getAttribute?.("data-role"),
+        current.getAttribute?.("data-testid"),
+        current.getAttribute?.("aria-label"),
+        current.getAttribute?.("aria-roledescription"),
+        typeof current.className === "string" ? current.className : String(current.className || "")
+      ]
+        .filter(Boolean)
+        .join(" ");
+      if (attrs) {
+        samples.push(attrs.toLowerCase());
+      }
+      current = current.parentElement;
+      depth += 1;
+    }
+    const signal = samples.join(" ");
+    if (!signal) return "unknown";
+    if (/(assistant|codex|tool|system|model)-?(message|turn)?/.test(signal)) return "assistant";
+    if (/(user|human|prompt|request)-?(message|turn)?/.test(signal)) return "user";
+    return "unknown";
+  }
+
+  function isReasonableTimelineNode(node, text) {
+    if (!node || !text || text.length < 2) return false;
+    const rect = node.getBoundingClientRect?.();
+    if (rect && (rect.width <= 0 || rect.height <= 0)) return false;
+    if (text.length > 4000) return false;
+    const nestedConversationBlocks = node.querySelectorAll?.(
+      "[data-message-author-role], [data-author-role], [data-testid*='conversation'], [data-testid*='message'], article"
+    )?.length || 0;
+    if (nestedConversationBlocks > 6) return false;
+    return true;
+  }
+
+  function isLikelyUserMessageNode(node, text) {
     if (!node) return false;
-    if (node.getAttribute?.("data-message-author-role") === "user") return true;
+    const roleSignal = timelineRoleSignal(node);
+    if (roleSignal === "assistant") return false;
+    if (roleSignal === "user") return isReasonableTimelineNode(node, text);
+    const normalizedText = text || normalizeText(node.textContent || "");
+    if (/^(you|user|你|用户)[:：\s]/i.test(normalizedText)) {
+      return isReasonableTimelineNode(node, normalizedText);
+    }
+    if (/^(assistant|codex|助手)[:：\s]/i.test(normalizedText)) {
+      return false;
+    }
     const testId = String(node.getAttribute?.("data-testid") || "");
-    if (/user-message/i.test(testId)) return true;
-    const className = typeof node.className === "string" ? node.className : String(node.className || "");
-    if (/user-message/i.test(className)) return true;
-    if (/conversation-turn/i.test(testId)) {
-      const role = String(node.getAttribute?.("data-message-author-role") || node.getAttribute?.("data-author-role") || "");
-      if (role) return role === "user";
-      const text = normalizeText(node.textContent || "");
-      if (/^(you|user|你|用户)[:：\s]/i.test(text)) return true;
-      if (/^(assistant|codex|助手)[:：\s]/i.test(text)) return false;
+    if (/conversation-turn|message/i.test(testId)) {
+      return isReasonableTimelineNode(node, normalizedText);
     }
     return false;
+  }
+
+  function pushTimelineCandidate(nodes, candidate) {
+    const candidateNode = candidate?.node;
+    if (!candidateNode) return;
+    const existingIndex = nodes.findIndex((item) => item.node === candidateNode || item.node.contains(candidateNode));
+    if (existingIndex >= 0) {
+      nodes[existingIndex] = candidate;
+      return;
+    }
+    if (nodes.some((item) => candidateNode.contains(item.node))) {
+      return;
+    }
+    nodes.push(candidate);
   }
 
   function timelineNodeOffset(node, scroller, fallbackOffset) {
@@ -1412,9 +1336,17 @@
   function messageCandidates() {
     const selectors = [
       "[data-message-author-role='user']",
+      "[data-author-role='user']",
       "[data-testid*='conversation-turn']",
+      "[data-testid*='conversation']",
       "[data-testid*='user-message']",
-      "[class*='user-message']"
+      "[data-testid*='message']",
+      "[class*='user-message']",
+      "[class*='prompt']",
+      "[class*='conversation']",
+      "[data-message-id]",
+      "article",
+      "[role='article']"
     ];
     const seen = new Set();
     const nodes = [];
@@ -1422,12 +1354,9 @@
       document.querySelectorAll(selector).forEach((node) => {
         if (seen.has(node)) return;
         seen.add(node);
-        if (!isLikelyUserMessageNode(node)) return;
         const text = timelineTextFromNode(node);
-        const rect = node.getBoundingClientRect?.();
-        if (text.length >= 2 && (!rect || rect.height > 0)) {
-          nodes.push({ node, text });
-        }
+        if (!isLikelyUserMessageNode(node, text)) return;
+        pushTimelineCandidate(nodes, { node, text });
       });
     });
     return nodes.slice(0, 80);
