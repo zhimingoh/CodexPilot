@@ -12,7 +12,7 @@ $Version = if ($env:VERSION) {
 }
 
 if ($TargetTriple -notlike "*windows-msvc") {
-  throw "当前脚本只用于 Windows MSVC 打包，检测到 target：$TargetTriple"
+  throw "This script only supports Windows MSVC targets. Detected target: $TargetTriple"
 }
 
 $CargoProfileFlag = @()
@@ -26,37 +26,47 @@ $SidecarDir = Join-Path $ManagerDir "src-tauri\binaries"
 $SidecarPath = Join-Path $SidecarDir "codex-pilot-launcher-$TargetTriple.exe"
 New-Item -ItemType Directory -Force $SidecarDir | Out-Null
 
-Write-Host "构建 launcher sidecar：$TargetTriple ($Profile)"
+Write-Host "Building launcher sidecar for $TargetTriple ($Profile)"
 cargo build -p codex-pilot-launcher @CargoProfileFlag --target $TargetTriple
 Copy-Item (Join-Path $RootDir "target\$TargetTriple\$TargetProfileDir\codex-pilot-launcher.exe") $SidecarPath -Force
 
-Write-Host "构建 Manager 前端"
 Push-Location $ManagerDir
 try {
-  npm run vite:build
+  $npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
+  if (-not $npmCmd) {
+    throw "npm.cmd not found in PATH. Install Node.js or add npm.cmd to PATH before packaging."
+  }
+
+  $tauriArgs = @("run", "tauri", "--", "build", "--target", $TargetTriple)
+  if ($Profile -ne "release") {
+    $tauriArgs += @("--debug")
+  }
+
+  Write-Host "Building CodexPilot manager with Tauri"
+  & $npmCmd.Source @tauriArgs
+
+  $bundleRoot = Join-Path $RootDir "target\$TargetTriple\$TargetProfileDir\bundle"
+  $nsisInstaller = Get-ChildItem -Path (Join-Path $bundleRoot "nsis") -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+  $msiInstaller = Get-ChildItem -Path (Join-Path $bundleRoot "msi") -Filter "*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+
+  if (-not $nsisInstaller -and -not $msiInstaller) {
+    throw "Tauri build completed, but no Windows installer was found under $bundleRoot"
+  }
+
+  $distDir = Join-Path $RootDir "dist\windows"
+  New-Item -ItemType Directory -Force $distDir | Out-Null
+
+  if ($nsisInstaller) {
+    $destExe = Join-Path $distDir "CodexPilot-$Version-windows-x64-setup.exe"
+    Copy-Item $nsisInstaller.FullName $destExe -Force
+    Write-Host "Windows installer ready: $destExe"
+  }
+
+  if ($msiInstaller) {
+    $destMsi = Join-Path $distDir "CodexPilot-$Version-windows-x64.msi"
+    Copy-Item $msiInstaller.FullName $destMsi -Force
+    Write-Host "Windows MSI ready: $destMsi"
+  }
 } finally {
   Pop-Location
 }
-
-Write-Host "构建 Manager 可执行文件"
-cargo build -p codex-pilot-manager @CargoProfileFlag --target $TargetTriple
-
-$AppStageDir = Join-Path $RootDir "dist\windows\app"
-New-Item -ItemType Directory -Force $AppStageDir | Out-Null
-Copy-Item (Join-Path $RootDir "target\$TargetTriple\$TargetProfileDir\codex-pilot-launcher.exe") (Join-Path $AppStageDir "codex-pilot-launcher.exe") -Force
-Copy-Item (Join-Path $RootDir "target\$TargetTriple\$TargetProfileDir\codex-pilot-manager.exe") (Join-Path $AppStageDir "codex-pilot-manager.exe") -Force
-
-$MakeNsis = Join-Path ${env:ProgramFiles(x86)} "NSIS\makensis.exe"
-if (-not (Test-Path $MakeNsis)) {
-  $MakeNsis = "makensis"
-}
-
-Write-Host "生成 Windows 安装包"
-Push-Location (Join-Path $RootDir "scripts\installer\windows")
-try {
-  & $MakeNsis "/INPUTCHARSET" "UTF8" "/DVERSION=$Version" "CodexPilot.nsi"
-} finally {
-  Pop-Location
-}
-
-Write-Host "Windows 打包完成：$(Join-Path $RootDir "dist\windows\CodexPilot-$Version-windows-x64-setup.exe")"
