@@ -21,7 +21,7 @@
 | T06   | 引入 `ManagerError` 类型（试点）  | P1     | 半天   | DONE |
 | T07   | 引入 `tracing` 框架               | P2     | 1 h    | DONE |
 | T08   | Mutex 中毒处理                    | P2     | 1 h    | DONE |
-| T09   | `storage.rs` 拆分调研（先不动手） | P2     | 1 h    | TODO |
+| T09   | `storage.rs` 拆分调研（先不动手） | P2     | 1 h    | DONE |
 | T10   | `provider.rs` 事务性调研          | P2     | 1 h    | TODO |
 | T11   | 修复 `lib.rs` 测试 `default_upstream_protocol` import 遗漏 | P0 | 5 min | DONE |
 | T12   | 补齐 `protocol_proxy_transport.rs` 漏掉的 3 处 `reqwest::Client::new()` | P1 | 10 min | DONE |
