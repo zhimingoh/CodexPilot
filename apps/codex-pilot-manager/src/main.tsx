@@ -27,218 +27,35 @@ import {
 } from "lucide-react";
 import { callBackend, isUiPreviewMode } from "./backend";
 import { resolveAutoLaunchAction } from "./autoLaunch";
+import {
+  type AuthenticatedBehavior,
+  type BackendStatus,
+  type CcsImportResult,
+  type CcsProviderSnapshot,
+  type DiagnosticsSnapshot,
+  type EnhancementSettings,
+  type LaunchSnapshot,
+  type OfficialSnapshotImportResult,
+  type OfficialSnapshotPrepareResult,
+  type ProviderCount,
+  type ProviderProfile,
+  type ProviderProfileSaveResponse,
+  type ProviderSnapshot,
+  type ProviderSyncSnapshot,
+  type RecycleBinBatchResponse,
+  type RecycleBinEntry,
+  type RecycleBinSnapshot,
+  type RunMode,
+  type SessionZipExportResult,
+  type SessionZipImportMode,
+  type SessionZipImportResult,
+  type SessionZipInspectResult,
+  THEME_STORAGE_KEY,
+  type Theme,
+  type UpstreamProtocol,
+  type ViewId,
+} from "./types";
 import "./styles.css";
-
-type BackendStatus = {
-  status: string;
-  version: string;
-};
-
-type LaunchSnapshot = {
-  appPath: string | null;
-  requestedAppPath: string;
-  debugPort: number;
-  helperPort: number;
-  autoLaunchOnOpen: boolean;
-  autoSyncSessionsOnLaunch: boolean;
-  ready: boolean;
-  codexInstalled: boolean;
-  state: string;
-  actionKind: string;
-  actionLabel: string;
-  helperReachable: boolean;
-  debugReachable: boolean;
-  codexRunning: boolean;
-  detail: string;
-  commandPreview: string[];
-};
-
-type ProviderSnapshot = {
-  activeProvider: string;
-  mode: RunMode;
-  profile: string;
-  source: string;
-  authPath: string;
-  configured: boolean;
-  authenticated: boolean;
-  accountLabel: string | null;
-  routeLabel: string;
-  statusMessage: string;
-  degraded: boolean;
-  officialSnapshotAvailable: boolean;
-  backupSnapshotAvailable: boolean;
-  profiles: ProviderProfile[];
-  activeProfileId: string;
-};
-
-type CcsProviderSnapshot = {
-  dbPath: string;
-  availableCount: number;
-  importableCount: number;
-  status: string;
-  message: string;
-};
-
-type ProviderProfile = {
-  id: string;
-  name: string;
-  baseUrl: string;
-  bearerToken: string;
-  mode: ProviderProfileMode;
-  upstreamProtocol: UpstreamProtocol;
-  authenticatedBehavior: AuthenticatedBehavior;
-};
-
-type RunMode = "official" | "hybridApi" | "api";
-type ProviderProfileMode = "hybridApi" | "api";
-type AuthenticatedBehavior = "relay" | "officialDirect";
-type UpstreamProtocol = "responses" | "chatCompletions" | "anthropicMessages";
-type Theme = "light" | "dark";
-
-const THEME_STORAGE_KEY = "codex-pilot-theme";
-
-type ProviderProfileSaveResponse = {
-  id: string;
-  message: string;
-};
-
-type OfficialSnapshotImportResult = {
-  message: string;
-  provider: ProviderSnapshot;
-};
-
-type OfficialSnapshotPrepareResult = {
-  message: string;
-  provider: ProviderSnapshot;
-};
-
-type ProviderProfileSaveRequest = {
-  id: string | null;
-  name: string;
-  baseUrl: string;
-  bearerToken: string;
-  mode: ProviderProfileMode;
-  upstreamProtocol: UpstreamProtocol;
-  authenticatedBehavior: AuthenticatedBehavior;
-  activate: boolean;
-};
-
-type CcsImportResult = {
-  importedCount: number;
-  skippedCount: number;
-  renamedCount: number;
-  provider: ProviderSnapshot;
-  ccs: CcsProviderSnapshot;
-  message: string;
-};
-
-type ProviderCount = {
-  provider: string;
-  count: number;
-};
-
-type ProviderSyncSnapshot = {
-  targetProvider: string;
-  currentProvider: string;
-  availableProviders: string[];
-  rolloutFiles: number;
-  rolloutRewriteNeeded: number;
-  sqliteRows: number;
-  sqliteProviderRowsNeedingSync: number;
-  sqliteTotalUpdatesNeeded: number;
-  rolloutProviders: ProviderCount[];
-  sqliteProviders: ProviderCount[];
-};
-
-type DiagnosticCheck = {
-  name: string;
-  status: string;
-  detail: string;
-};
-
-type DiagnosticsSnapshot = {
-  checks: DiagnosticCheck[];
-  logs: string[];
-};
-
-type RecycleBinEntry = {
-  token: string;
-  sessionId: string;
-  title: string | null;
-  projectCwd: string | null;
-  schema: string;
-  dbPath: string;
-  backupPath: string;
-  deletedAt: number | null;
-  lastActiveAt: number | null;
-  recoverable: boolean;
-  status: string;
-};
-
-type RecycleBinSnapshot = {
-  entries: RecycleBinEntry[];
-};
-
-type RecycleBinBatchResponse = {
-  message: string;
-  succeededTokens: string[];
-  failed: Array<{
-    token: string;
-    message: string;
-  }>;
-};
-
-type SessionZipManifest = {
-  version: number;
-  product: string;
-  exportedAt: string;
-  exportedAtMs: number;
-  includes: {
-    sessions: boolean;
-    archivedSessions: boolean;
-    stateSqlite: boolean;
-  };
-  counts: {
-    sessionFiles: number;
-    archivedSessionFiles: number;
-  };
-};
-
-type SessionZipExportResult = {
-  zipPath: string;
-  manifest: SessionZipManifest;
-};
-
-type SessionZipInspectResult = {
-  zipPath: string;
-  manifest: SessionZipManifest;
-  entries: {
-    sessions: boolean;
-    archivedSessions: boolean;
-    stateSqlite: boolean;
-  };
-};
-
-type SessionZipImportMode = "merge" | "overwrite";
-
-type SessionZipImportResult = {
-  mode: SessionZipImportMode;
-  manifest: SessionZipManifest;
-  restoredSessionFiles: number;
-  restoredArchivedSessionFiles: number;
-  restoredStateSqlite: boolean;
-  safetyBackupZipPath: string | null;
-  message: string;
-};
-
-type EnhancementSettings = {
-  enabled: boolean;
-  timeline: boolean;
-  inlineActions: boolean;
-  scrollRestore: boolean;
-};
-
-type ViewId = "overview" | "launch" | "provider" | "sessions" | "diagnostics";
 
 const views: Array<{ id: ViewId; label: string; icon: React.ElementType }> = [
   { id: "overview", label: "总览", icon: Activity },
