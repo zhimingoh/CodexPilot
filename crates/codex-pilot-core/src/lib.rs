@@ -5,6 +5,7 @@ pub mod bridge_scripts;
 pub mod ccs_import;
 pub mod cdp;
 pub mod diagnostic_log;
+pub mod error;
 pub mod helper;
 pub mod http_client;
 pub mod launcher;

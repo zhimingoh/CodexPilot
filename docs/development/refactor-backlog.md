@@ -18,7 +18,7 @@
 | T03   | 新建共享 `http_client` 模块       | P0     | 1 h    | DONE（验收已补完 by T11） |
 | T04   | 后端事件推送 + 前端订阅           | P1     | 2 h    | DONE |
 | T05   | `main.tsx` 机械拆分               | P1     | 2-4 h  | DONE |
-| T06   | 引入 `ManagerError` 类型（试点）  | P1     | 半天   | TODO |
+| T06   | 引入 `ManagerError` 类型（试点）  | P1     | 半天   | DONE |
 | T07   | 引入 `tracing` 框架               | P2     | 1 h    | DONE |
 | T08   | Mutex 中毒处理                    | P2     | 1 h    | DONE |
 | T09   | `storage.rs` 拆分调研（先不动手） | P2     | 1 h    | TODO |
