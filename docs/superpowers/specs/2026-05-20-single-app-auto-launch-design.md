@@ -62,6 +62,11 @@ for explicit launch/reinject actions and for one conservative automatic action
 chosen from the launch snapshot. It must not call restart automatically when a
 Codex window is already running without a reachable debug port.
 
+The launch snapshot implementation should avoid repeated synchronous subprocess
+checks on high-frequency window events. Runtime state probes should be async on
+the backend, use a short-lived cache to collapse repeated checks, and keep
+focus-triggered manager refresh rate-limited on the frontend.
+
 ## Startup Flow
 
 1. Manager starts normally.
@@ -80,6 +85,10 @@ Codex window is already running without a reachable debug port.
    process and do not automatically retry again.
 7. Manual launch keeps handling all cases, including the confirmed restart path.
 8. On failure, the manager stays visible and shows the error.
+
+Manager refresh triggered by `focus` and `visibilitychange` should remain
+conservative and lightweight. Those events may refresh state, but should not
+burst-fire direct blocking process checks every time the window focus toggles.
 
 ## Error Handling
 

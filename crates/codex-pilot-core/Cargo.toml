@@ -10,6 +10,7 @@ anyhow.workspace = true
 codex-pilot-data = { path = "../codex-pilot-data" }
 directories.workspace = true
 futures-util.workspace = true
+once_cell.workspace = true
 reqwest.workspace = true
 rusqlite.workspace = true
 serde.workspace = true

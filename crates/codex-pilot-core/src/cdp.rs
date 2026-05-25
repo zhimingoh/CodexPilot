@@ -5,7 +5,6 @@ use serde_json::{Value, json};
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 
-const CDP_HTTP_TIMEOUT: Duration = Duration::from_secs(3);
 const CDP_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const CDP_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -28,11 +27,7 @@ pub async fn list_targets(debug_port: u16) -> anyhow::Result<Vec<CdpTarget>> {
         "cdp.list_targets",
         serde_json::json!({ "debug_port": debug_port }),
     );
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(CDP_HTTP_TIMEOUT)
-        .build()
-        .context("failed to build CDP HTTP client")?;
+    let client = crate::http_client::shared();
     let response = client
         .get(url)
         .send()

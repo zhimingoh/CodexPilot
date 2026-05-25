@@ -544,6 +544,7 @@ dependencies = [
  "codex-pilot-data",
  "directories",
  "futures-util",
+ "once_cell",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",

@@ -22,31 +22,7 @@ pub type BridgeHandler = Arc<
 static NEXT_MESSAGE_ID: AtomicU64 = AtomicU64::new(100);
 
 pub fn build_bridge_script(binding_name: &str) -> String {
-    format!(
-        r#"
-(() => {{
-  window.__codexPilotCallbacks = new Map();
-  window.__codexPilotSeq = 0;
-  window.__codexPilotResolve = (id, result) => {{
-    const callback = window.__codexPilotCallbacks.get(id);
-    if (!callback) return;
-    window.__codexPilotCallbacks.delete(id);
-    callback.resolve(result);
-  }};
-  window.__codexPilotReject = (id, message) => {{
-    const callback = window.__codexPilotCallbacks.get(id);
-    if (!callback) return;
-    window.__codexPilotCallbacks.delete(id);
-    callback.resolve({{ status: "failed", message }});
-  }};
-  window.__codexPilotBridge = (path, payload) => new Promise((resolve) => {{
-    const id = String(++window.__codexPilotSeq);
-    window.__codexPilotCallbacks.set(id, {{ resolve }});
-    window.{binding_name}(JSON.stringify({{ id, path, payload }}));
-  }});
-}})();
-"#
-    )
+    crate::bridge_scripts::install_bridge_script_template(binding_name)
 }
 
 pub async fn install_bridge(
@@ -122,27 +98,15 @@ where
 }
 
 pub fn runtime_evaluate_params(script: &str) -> Value {
-    json!({
-        "expression": script,
-        "awaitPromise": false,
-        "allowUnsafeEvalBlockedByCSP": true,
-    })
+    crate::bridge_scripts::runtime_evaluate_params(script)
 }
 
 pub fn resolve_bridge_expression(request_id: &str, result: &Value) -> anyhow::Result<String> {
-    Ok(format!(
-        "window.__codexPilotResolve({}, {})",
-        serde_json::to_string(request_id)?,
-        serde_json::to_string(result)?
-    ))
+    crate::bridge_scripts::resolve_bridge_expression(request_id, result)
 }
 
 pub fn reject_bridge_expression(request_id: &str, message: &str) -> anyhow::Result<String> {
-    Ok(format!(
-        "window.__codexPilotReject({}, {})",
-        serde_json::to_string(request_id)?,
-        serde_json::to_string(message)?
-    ))
+    crate::bridge_scripts::reject_bridge_expression(request_id, message)
 }
 
 async fn connect_cdp_websocket(

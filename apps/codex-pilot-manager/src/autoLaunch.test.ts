@@ -131,3 +131,16 @@ expectEqual(
   },
   "does not auto launch when Codex is not installed",
 );
+
+expectEqual(
+  resolveAutoLaunchAction({
+    actionKind: "launching",
+    autoLaunchOnOpen: true,
+    alreadyAttempted: false,
+    alreadyFailed: false,
+    launching: false,
+    codexInstalled: true,
+  }),
+  { kind: "skip", markAttempted: false },
+  "skips without marking attempted while backend is launching",
+);

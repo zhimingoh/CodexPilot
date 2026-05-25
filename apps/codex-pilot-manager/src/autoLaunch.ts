@@ -25,6 +25,11 @@ export function resolveAutoLaunchAction(input: AutoLaunchInput): AutoLaunchDecis
     };
   }
 
+  if (input.actionKind === "launching") {
+    // 后端正在启动中，不要 markAttempted，等下一次 refresh 再判断
+    return { kind: "skip", markAttempted: false };
+  }
+
   if (input.actionKind === "launch") {
     const progress = "正在自动启动 Codex";
     return {

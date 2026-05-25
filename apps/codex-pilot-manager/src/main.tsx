@@ -325,14 +325,23 @@ function App() {
   }, [refresh]);
 
   React.useEffect(() => {
+    let debounceTimer: number | null = null;
     const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") {
-        refresh(true);
+      if (document.visibilityState !== "visible") return;
+      if (debounceTimer !== null) {
+        window.clearTimeout(debounceTimer);
       }
+      debounceTimer = window.setTimeout(() => {
+        refresh(true);
+        debounceTimer = null;
+      }, 500);
     };
     window.addEventListener("focus", refreshWhenVisible);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
+      if (debounceTimer !== null) {
+        window.clearTimeout(debounceTimer);
+      }
       window.removeEventListener("focus", refreshWhenVisible);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };

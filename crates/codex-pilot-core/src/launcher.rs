@@ -2,7 +2,7 @@ use anyhow::Context;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 
 const INJECTION_MAX_ATTEMPTS: usize = 2;
 const INJECTION_RETRY_DELAY_MS: u64 = 500;
@@ -112,7 +112,7 @@ pub async fn launch_and_inject(options: LaunchOptions) -> anyhow::Result<()> {
             }
         }
     }
-    if is_codex_process_running() {
+    if is_codex_process_running().await {
         let _ = crate::diagnostic_log::append(
             "launcher.codex_running_without_debug_port",
             serde_json::json!({
@@ -228,47 +228,52 @@ async fn launch_codex(app_dir: &Path, debug_port: u16) -> anyhow::Result<Child> 
             "arg_count": command.len().saturating_sub(1)
         }),
     );
-    let mut process = Command::new(executable);
+    let mut process = crate::windows_integration::tokio_command(executable);
     process
         .args(&command[1..])
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        process.creation_flags(0x08000000);
-    }
-    process
-        .spawn()
+    crate::windows_integration::spawn_hidden(&mut process)
         .with_context(|| format!("failed to launch Codex with {executable}"))
 }
 
-fn is_codex_process_running() -> bool {
+pub async fn is_codex_process_running() -> bool {
+    tokio::task::spawn_blocking(detect_codex_process_running)
+        .await
+        .unwrap_or(false)
+}
+
+fn detect_codex_process_running() -> bool {
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("pgrep")
+        let mut command = crate::windows_integration::std_command("pgrep");
+        command
             .args(["-x", "Codex"])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .stderr(Stdio::null());
+        crate::windows_integration::status_hidden(&mut command)
             .map(|status| status.success())
             .unwrap_or(false)
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("tasklist")
+        let mut command = crate::windows_integration::std_command("tasklist");
+        command
             .args(["/FI", "IMAGENAME eq Codex.exe"])
-            .output()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        crate::windows_integration::output_hidden(&mut command)
             .map(|output| String::from_utf8_lossy(&output.stdout).contains("Codex.exe"))
             .unwrap_or(false)
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        std::process::Command::new("pgrep")
+        let mut command = crate::windows_integration::std_command("pgrep");
+        command
             .args(["-x", "codex"])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .stderr(Stdio::null());
+        crate::windows_integration::status_hidden(&mut command)
             .map(|status| status.success())
             .unwrap_or(false)
     }

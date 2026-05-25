@@ -1,0 +1,41 @@
+name: Windows verify
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install frontend dependencies
+        working-directory: apps/codex-pilot-manager
+        run: npm ci
+
+      - name: Run contract lint
+        shell: bash
+        run: scripts/lint-contracts.sh
+
+      - name: Cargo build workspace
+        run: cargo build --workspace
+
+      - name: Cargo test workspace
+        run: cargo test --workspace
