@@ -36,6 +36,8 @@
 | T17   | sort_key 在 sqlite 缺行时从 rollout 文件名兜底 | P2 | 30 min | DONE |
 | T18   | `thread_sort_keys` 200 静默截断改显式 | P2 | 30 min | DONE |
 | T19   | `session_zip` 导出目录按相对路径稳定排序 | P2 | 20 min | DONE |
+| T20a  | `storage.rs` 拆分映射表调研（51 个内部 helper 归属） | P2 | 1 h | TODO |
+| T20b  | `storage.rs` 按 T20a 映射表机械搬运 | P2 | 2-3 h | TODO（依赖 T20a） |
 
 完成顺序建议：T00 → T01 → T02 → T03 → **T11** → T12 → T05 → T04 → T08 → T07 → T06 → T09 → T10 → T13。
 T11 是 T03 验收阻塞项，必须先解。T12 是 T03 发现的漏网鱼，顺手收掉。
@@ -968,3 +970,127 @@ for entry in fs::read_dir(source)? {
 - `cargo test -p codex-pilot-data` 全绿
 - 多次导出同一份数据，ZIP 内 entry 顺序一致（手动 unzip 看也可）
 - 顺序只是字典序，不承诺"与 UI 一致"——后者是更大的工作，T16 §5.5 已说明
+
+---
+
+### T20a · `storage.rs` 拆分映射表调研
+
+**问题**：[storage.rs](crates/codex-pilot-data/src/storage.rs) 当前 2122 行，T09 调研报告 [storage-split-analysis.md](docs/development/storage-split-analysis.md) 已列出 13 个公开 API 的功能分组（A/B/C/D 四组 + 共享 helper 落点建议），但**没列 51 个非 pub 内部 helper 的归属**。直接让 Codex 按 T09 拆容易踩到：
+- helper 被两个组共用却没标，搬错地方导致循环依赖
+- 当前是 `fn`（模块内私有），搬到子模块后该升 `pub(super)` 还是 `pub(crate)` 没有依据
+- 跨组测试 fixture 函数（`unique_temp_path` 等）的归属
+- `BackupPayload`、`SchemaKind`、`OwnedSqlValue` 这些"内部协议类型"的最终落点
+
+本任务**只做映射表，不写任何拆分代码**，作为 T20b 机械搬运的输入。
+
+**Codex Prompt**：
+
+```
+对 crates/codex-pilot-data/src/storage.rs（当前 2122 行）做拆分映射表调研。本任务 ABSOLUTELY 不写任何拆分代码，也不新建任何 .rs 文件，只输出报告。
+
+前置阅读（必看）：
+- docs/development/storage-split-analysis.md（T09 调研，给出了 13 个公开 API 的 A/B/C/D 分组建议和共享 helper 落点）
+- crates/codex-pilot-data/src/storage.rs 全文
+
+本次任务要补完 T09 没覆盖的部分：所有非 pub 函数、所有非 pub struct/enum、所有 const/static、以及测试模块的归属判断。
+
+请输出一份新的 markdown 报告，保存到 docs/development/storage-split-mapping.md，包含：
+
+1. **目标文件结构**：明确建议的拆分后目录结构，例如：
+
+       crates/codex-pilot-data/src/storage/
+       ├── mod.rs              ← 扁平 re-export + 跨组集成测试
+       ├── models.rs           ← A 组
+       ├── recycle_bin.rs      ← B 组
+       ├── delete_undo.rs      ← C 组
+       ├── codex_threads.rs    ← D 组
+       ├── schema.rs           ← SchemaKind / has_table / has_columns / table_columns
+       ├── backup.rs           ← BackupPayload + 备份相关 helper
+       └── sql_helpers.rs      ← sql_value_to_json / json_to_sql_value / quote_identifier / encode_hex / decode_hex 等
+
+   如果你认为更合理的结构不同，可以提出，但要给理由。
+
+2. **非 pub 函数归属表**：对 storage.rs 里所有 `fn` / `pub(crate) fn` / `pub(super) fn`（不含 impl 块里的方法），列出：
+   | 函数名 | 当前行号 | 当前可见性 | callers（哪些 fn 调用它）| 建议归属 | 建议可见性 | 备注 |
+
+   使用 grep -nE '^fn |^pub\(crate\) fn ' crates/codex-pilot-data/src/storage.rs 拿到当前列表。可见性建议规则：
+   - 只在单个子模块内被调用 → 保持 `fn`（模块私有）
+   - 被同 crate 多个子模块调用 → `pub(super)`（仅父模块 storage 内可见）
+   - 被 storage 外部 crate 调用 → 保持现有 `pub(crate)` 或 `pub`
+   
+   备注列写"和 X 函数耦合紧、应该一起搬"或"是纯工具函数、放 sql_helpers"这类。
+
+3. **非 pub struct / enum 归属表**：同样格式。重点关注 BackupPayload、SchemaKind、OwnedSqlValue、Message（如果有）这类。
+
+4. **测试归属表**：列出 #[cfg(test)] mod tests 里每个 #[test] fn：
+   | 测试名 | 当前行号 | 覆盖范围 | 建议归属 |
+   
+   归属规则：
+   - 只测试单个子模块的纯函数 → 跟着搬到该子模块的 #[cfg(test)] mod tests
+   - 覆盖多组（DB + 文件 + 索引一起）→ 保留在 storage/mod.rs 测试区
+   - 用到测试 fixture 函数（如 unique_temp_path）的，把 fixture 也一并标注归属（建议 storage/mod.rs 或新建 storage/test_support.rs）
+
+5. **可见性升级清单**：明确列出哪些当前 `fn` 必须升 `pub(super)` 才能让拆分成立。这是 T20b 最容易出错的地方，必须穷举。
+
+6. **风险点（在 T09 §3 基础上补充）**：
+   - 跨子模块循环依赖的可能性（A 依赖 B 同时 B 依赖 A？）
+   - 哪些 helper 现在是私有但其实有外部 crate 已经在用（grep 一下 codex-pilot-core 和 codex-pilot-manager 里是不是有 codex_pilot_data::storage::xxx 调用了应该私有的东西）
+   - rusqlite / serde_json 等外部 import 在子模块拆完后哪些可以下沉、哪些必须保留在 mod.rs
+
+7. **T20b 执行计划（不写代码，只列步骤）**：参照 T05 的分子任务+独立 commit 模式，给出 T20b 建议的执行顺序，例如：
+   - 第 1 步：建 storage/ 目录 + 空骨架 + storage/mod.rs 全部 pub use（先让 cargo check 过）
+   - 第 2 步：搬 A 组到 storage/models.rs，commit
+   - 第 3 步：...
+   每一步独立 commit + 每一步都跑 cargo test --workspace。
+
+要求：
+- 报告**自包含**：T20b 的 Codex 只看你这份报告就能机械执行，不需要再读 T09
+- 不要修改 storage.rs 任何代码
+- 不要新建任何 .rs 文件
+- 不要修改 lib.rs
+- 报告完成后把 backlog T20a 行 TODO 改 DONE
+```
+
+**验收**：
+- 拿到一份完整的 [storage-split-mapping.md](docs/development/storage-split-mapping.md)
+- 51 个 helper、所有 struct/enum、所有测试都有明确归属
+- 可见性升级清单穷举完整
+- 由维护者（人）审一遍 T20b 执行计划，决定是否照做或调整
+- T20b 的 Prompt 等本报告通过后再起
+
+---
+
+### T20b · `storage.rs` 按 T20a 映射表机械搬运
+
+**问题**：T20a 映射表就绪后，把 storage.rs 实际拆成多个子模块。**严格机械搬运**，禁止任何"顺手优化"。
+
+**前置依赖**：T20a 必须 DONE，且 [storage-split-mapping.md](docs/development/storage-split-mapping.md) 已被维护者审过。
+
+**Codex Prompt**：
+
+```
+（等 T20a 调研报告出来后，根据报告内容生成本 prompt。先不要写。）
+
+写 prompt 时严格遵守的原则：
+1. 完全照搬 T20a 报告里的执行步骤，每一步独立 commit
+2. 每一步搬运后跑 cargo test --workspace，必须全绿才能下一步
+3. 禁止改动任何函数体逻辑——只是把 `fn xxx() { ... }` 整段搬到新文件
+4. 禁止改 impl 块的内部逻辑——只是把 `impl SQLiteStorageAdapter { ... }` 按方法分组拆成多个 impl 块（每个子模块一个）
+5. 禁止改公开 API 签名
+6. 禁止调整测试断言
+7. storage/mod.rs 必须 pub use 所有原来 pub 的符号，让 codex_pilot_data::storage::* 这层外部路径完全不变
+8. 可见性升级严格按 T20a 的清单，不要私自升级别的 fn
+9. 整个 T20b 完成后跑：
+   - cargo fmt --check
+   - cargo clippy --workspace -- -D warnings（如果项目用 clippy）
+   - cargo test --workspace
+   - cd apps/codex-pilot-manager && npm test（确认前端没受影响）
+```
+
+**验收**：
+- storage.rs 被拆成 storage/mod.rs + 若干子文件，单文件均 ≤ 500 行
+- `git log --oneline` 显示按 T20a 计划分了多个独立 commit
+- `codex_pilot_data::storage::SQLiteStorageAdapter` 等外部调用路径**零改动**
+- `cargo test --workspace` 全绿
+- `cargo fmt --check` 通过
+- 前端 npm test 通过
