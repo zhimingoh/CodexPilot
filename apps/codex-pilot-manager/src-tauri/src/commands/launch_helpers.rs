@@ -9,7 +9,11 @@ where
     match state.launch_state.lock() {
         Ok(mut g) => f(&mut g),
         Err(poisoned) => {
-            tracing::error!(target = "mutex", lock = "launch_state", "mutex poisoned, recovering");
+            tracing::error!(
+                target = "mutex",
+                lock = "launch_state",
+                "mutex poisoned, recovering"
+            );
             let mut g = poisoned.into_inner();
             f(&mut g);
             state.launch_state.clear_poison();
@@ -24,7 +28,11 @@ where
     match state.codex_process_cache.lock() {
         Ok(mut g) => f(&mut g),
         Err(poisoned) => {
-            tracing::error!(target = "mutex", lock = "codex_process_cache", "mutex poisoned, recovering");
+            tracing::error!(
+                target = "mutex",
+                lock = "codex_process_cache",
+                "mutex poisoned, recovering"
+            );
             let mut g = poisoned.into_inner();
             f(&mut g);
             state.codex_process_cache.clear_poison();

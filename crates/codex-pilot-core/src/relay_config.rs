@@ -5,10 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::relay_config_auth::auth_json_chatgpt_account_label;
 use crate::relay_config_toml::{
-    backup_existing_config, clear_api_key_auth_json, infer_upstream_protocol_from_base_url,
-    now_ms, remove_root_key, remove_table, root_key_string, table_values,
-    unquote_toml_string, upsert_api_provider_config, upsert_relay_provider_config,
-    write_pure_api_auth_json,
+    backup_existing_config, clear_api_key_auth_json, infer_upstream_protocol_from_base_url, now_ms,
+    remove_root_key, remove_table, root_key_string, table_values, unquote_toml_string,
+    upsert_api_provider_config, upsert_relay_provider_config, write_pure_api_auth_json,
 };
 
 pub const RELAY_PROVIDER: &str = "CodexPilot";

@@ -35,7 +35,11 @@ pub async fn install_bridge(
         "bridge.install_start",
         json!({ "binding": binding_name, "scripts": new_document_scripts.len() }),
     );
-    tracing::debug!(target = "bridge", event = "bridge.install_start", "bridge.install_start");
+    tracing::debug!(
+        target = "bridge",
+        event = "bridge.install_start",
+        "bridge.install_start"
+    );
     let socket = connect_cdp_websocket(websocket_url).await?;
     let mut session = CdpSession::new(socket).with_handler(handler);
 
@@ -70,7 +74,11 @@ pub async fn install_bridge(
         "bridge.install_ok",
         json!({ "binding": binding_name, "scripts": new_document_scripts.len() }),
     );
-    tracing::debug!(target = "bridge", event = "bridge.install_ok", "bridge.install_ok");
+    tracing::debug!(
+        target = "bridge",
+        event = "bridge.install_ok",
+        "bridge.install_ok"
+    );
     Ok(())
 }
 
@@ -306,7 +314,11 @@ where
                 "execution_context_id": execution_context_id
             }),
         );
-        tracing::debug!(target = "bridge", event = "bridge.binding_called", "bridge.binding_called");
+        tracing::debug!(
+            target = "bridge",
+            event = "bridge.binding_called",
+            "bridge.binding_called"
+        );
 
         match handler(path, payload).await {
             Ok(result) => {
@@ -317,7 +329,11 @@ where
                         "status": result.get("status").and_then(Value::as_str).unwrap_or("unknown")
                     }),
                 );
-                tracing::debug!(target = "bridge", event = "bridge.route_result", "bridge.route_result");
+                tracing::debug!(
+                    target = "bridge",
+                    event = "bridge.route_result",
+                    "bridge.route_result"
+                );
                 self.resolve_bridge_request(request_id, &result).await?
             }
             Err(error) => {
@@ -328,7 +344,11 @@ where
                         "message": error.to_string()
                     }),
                 );
-                tracing::debug!(target = "bridge", event = "bridge.route_error", "bridge.route_error");
+                tracing::debug!(
+                    target = "bridge",
+                    event = "bridge.route_error",
+                    "bridge.route_error"
+                );
                 self.reject_bridge_request(request_id, &error.to_string())
                     .await?
             }
@@ -346,7 +366,11 @@ where
             "bridge.resolve_start",
             json!({ "request_id": request_id }),
         );
-        tracing::debug!(target = "bridge", event = "bridge.resolve_start", "bridge.resolve_start");
+        tracing::debug!(
+            target = "bridge",
+            event = "bridge.resolve_start",
+            "bridge.resolve_start"
+        );
         let expression = resolve_bridge_expression(request_id, result)?;
         match self
             .send_command_without_wait(
@@ -361,7 +385,11 @@ where
                     "bridge.resolve_sent",
                     json!({ "request_id": request_id }),
                 );
-                tracing::debug!(target = "bridge", event = "bridge.resolve_sent", "bridge.resolve_sent");
+                tracing::debug!(
+                    target = "bridge",
+                    event = "bridge.resolve_sent",
+                    "bridge.resolve_sent"
+                );
                 Ok(())
             }
             Err(error) => {
@@ -372,7 +400,11 @@ where
                         "message": error.to_string()
                     }),
                 );
-                tracing::debug!(target = "bridge", event = "bridge.resolve_failed", "bridge.resolve_failed");
+                tracing::debug!(
+                    target = "bridge",
+                    event = "bridge.resolve_failed",
+                    "bridge.resolve_failed"
+                );
                 Err(error)
             }
         }
@@ -390,7 +422,11 @@ where
                 "message": message
             }),
         );
-        tracing::debug!(target = "bridge", event = "bridge.reject_start", "bridge.reject_start");
+        tracing::debug!(
+            target = "bridge",
+            event = "bridge.reject_start",
+            "bridge.reject_start"
+        );
         let expression = reject_bridge_expression(request_id, message)?;
         match self
             .send_command_without_wait(
@@ -405,7 +441,11 @@ where
                     "bridge.reject_sent",
                     json!({ "request_id": request_id }),
                 );
-                tracing::debug!(target = "bridge", event = "bridge.reject_sent", "bridge.reject_sent");
+                tracing::debug!(
+                    target = "bridge",
+                    event = "bridge.reject_sent",
+                    "bridge.reject_sent"
+                );
                 Ok(())
             }
             Err(error) => {
@@ -416,7 +456,11 @@ where
                         "message": error.to_string()
                     }),
                 );
-                tracing::debug!(target = "bridge", event = "bridge.reject_failed", "bridge.reject_failed");
+                tracing::debug!(
+                    target = "bridge",
+                    event = "bridge.reject_failed",
+                    "bridge.reject_failed"
+                );
                 Err(error)
             }
         }

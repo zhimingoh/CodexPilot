@@ -46,7 +46,10 @@ fn capture_recovery_snapshot(operation: &str) -> Result<RecoverySnapshot, Manage
     let base = codex_pilot_core::app_paths::app_state_dir().join("recovery-snapshots");
     let files: Vec<(&str, PathBuf)> = vec![
         ("provider-profiles.json", provider_profiles_path()),
-        ("config.toml", codex_pilot_core::app_paths::codex_config_path()),
+        (
+            "config.toml",
+            codex_pilot_core::app_paths::codex_config_path(),
+        ),
         ("auth.json", codex_pilot_core::app_paths::codex_auth_path()),
     ];
     capture_recovery_snapshot_to(&base, operation, &files)
@@ -148,14 +151,16 @@ fn provider_snapshot_sync() -> ProviderSnapshot {
 
 #[tauri::command]
 pub(crate) async fn ccs_provider_snapshot() -> CcsProviderSnapshot {
-    tauri::async_runtime::spawn_blocking(|| ccs_provider_snapshot_for_state(&load_provider_profiles()))
-        .await
-        .expect("ccs_provider_snapshot task panicked")
+    tauri::async_runtime::spawn_blocking(|| {
+        ccs_provider_snapshot_for_state(&load_provider_profiles())
+    })
+    .await
+    .expect("ccs_provider_snapshot task panicked")
 }
 
 #[tauri::command]
-pub(crate) async fn import_official_snapshot_from_backup(
-) -> Result<OfficialSnapshotImportResult, ManagerError> {
+pub(crate) async fn import_official_snapshot_from_backup()
+-> Result<OfficialSnapshotImportResult, ManagerError> {
     tauri::async_runtime::spawn_blocking(|| {
         let mut state = load_provider_profiles();
         let backup = latest_official_backup_candidate()
@@ -178,11 +183,12 @@ pub(crate) async fn import_official_snapshot_from_backup(
 }
 
 #[tauri::command]
-pub(crate) async fn prepare_official_snapshot_after_clearing_relay(
-) -> Result<OfficialSnapshotPrepareResult, ManagerError> {
+pub(crate) async fn prepare_official_snapshot_after_clearing_relay()
+-> Result<OfficialSnapshotPrepareResult, ManagerError> {
     tauri::async_runtime::spawn_blocking(|| {
-        codex_pilot_core::relay_config::clear_relay_provider_config()
-            .map_err(|error| ManagerError::Internal(format!("停止 CodexPilot 中转失败：{error}")))?;
+        codex_pilot_core::relay_config::clear_relay_provider_config().map_err(|error| {
+            ManagerError::Internal(format!("停止 CodexPilot 中转失败：{error}"))
+        })?;
 
         let mut state = load_provider_profiles();
         let snapshot = codex_pilot_core::relay_config::capture_official_config_snapshot_from_home(
@@ -281,8 +287,8 @@ pub(crate) async fn import_ccs_provider_profiles() -> Result<CcsImportResult, Ma
 #[tauri::command]
 pub(crate) async fn apply_provider(request: ProviderApplyRequest) -> Result<String, ManagerError> {
     let profiles = load_provider_profiles();
-    let profile = profile_by_id(&profiles, request.profile_id.as_deref())
-        .map_err(ManagerError::NotFound)?;
+    let profile =
+        profile_by_id(&profiles, request.profile_id.as_deref()).map_err(ManagerError::NotFound)?;
     let snapshot = profiles.official_config_snapshot.clone();
     let requested_mode = request.mode;
     tauri::async_runtime::spawn_blocking(move || {
@@ -336,7 +342,9 @@ pub(crate) async fn save_provider_profile(
         if state.profiles.iter().any(|item| {
             item.id != profile.id && item.name.trim().eq_ignore_ascii_case(normalized_name)
         }) {
-            return Err(wrap(ManagerError::Conflict("配置档名称不能重复。".to_string())));
+            return Err(wrap(ManagerError::Conflict(
+                "配置档名称不能重复。".to_string(),
+            )));
         }
         let id = profile.id.clone();
         if let Some(existing) = state.profiles.iter_mut().find(|item| item.id == id) {
@@ -377,7 +385,11 @@ pub(crate) async fn activate_provider_profile(
             recovery_dir: recovery.dir_string(),
         };
         let mut state = load_provider_profiles();
-        if !state.profiles.iter().any(|profile| profile.id == request.id) {
+        if !state
+            .profiles
+            .iter()
+            .any(|profile| profile.id == request.id)
+        {
             return Err(wrap(ManagerError::NotFound(
                 "中转配置档不存在。".to_string(),
             )));

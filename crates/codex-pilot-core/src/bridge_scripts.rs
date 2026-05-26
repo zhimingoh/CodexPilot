@@ -36,7 +36,10 @@ pub(crate) fn runtime_evaluate_params(script: &str) -> Value {
     })
 }
 
-pub(crate) fn resolve_bridge_expression(request_id: &str, result: &Value) -> anyhow::Result<String> {
+pub(crate) fn resolve_bridge_expression(
+    request_id: &str,
+    result: &Value,
+) -> anyhow::Result<String> {
     Ok(format!(
         "window.__codexPilotResolve({}, {})",
         serde_json::to_string(request_id)?,

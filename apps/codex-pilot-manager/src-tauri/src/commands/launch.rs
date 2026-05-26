@@ -2,9 +2,9 @@ use super::super::*;
 use crate::commands::diagnostics::append_diagnostic_event;
 pub(crate) use crate::commands::launch_helpers::launch_state_label;
 use crate::commands::launch_helpers::{
-    auto_sync_sessions_after_launch, cached_codex_process_running,
-    clear_backend_status_file, launch_action_detail, launch_action_kind, launch_action_label,
-    request_codex_quit, with_codex_process_cache_mut, with_launch_state_mut,
+    auto_sync_sessions_after_launch, cached_codex_process_running, clear_backend_status_file,
+    launch_action_detail, launch_action_kind, launch_action_label, request_codex_quit,
+    with_codex_process_cache_mut, with_launch_state_mut,
 };
 
 fn emit_launch_state(app: &tauri::AppHandle, new_state: &LaunchState) {
@@ -133,8 +133,14 @@ pub(crate) async fn launch_codex(
         return Ok("CodexPilot 已在运行中。".to_string());
     }
     if codex_pilot_core::ports::can_connect_loopback_port(options.debug_port) {
-        return inject_existing_codex(&state, &app, &prefs, options.debug_port, options.helper_port)
-            .await;
+        return inject_existing_codex(
+            &state,
+            &app,
+            &prefs,
+            options.debug_port,
+            options.helper_port,
+        )
+        .await;
     }
     if cached_codex_process_running(&state).await {
         return Err(
@@ -155,7 +161,14 @@ pub(crate) async fn reinject_codex(
     if !codex_pilot_core::ports::can_connect_loopback_port(options.debug_port) {
         return Err("未检测到 Codex 调试端口，无法重新注入。".to_string());
     }
-    inject_existing_codex(&state, &app, &prefs, options.debug_port, options.helper_port).await
+    inject_existing_codex(
+        &state,
+        &app,
+        &prefs,
+        options.debug_port,
+        options.helper_port,
+    )
+    .await
 }
 
 #[tauri::command]

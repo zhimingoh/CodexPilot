@@ -7,7 +7,7 @@ use crate::protocol_proxy_conversion::{
     default_responses_usage, parse_iso8601_timestamp, response_id_from_chat_id,
 };
 use crate::protocol_proxy_sse::AnthropicSseState;
-use crate::protocol_proxy_sse_common::{push_sse, ReasoningItemState, TextItemState};
+use crate::protocol_proxy_sse_common::{ReasoningItemState, TextItemState, push_sse};
 
 impl Default for AnthropicSseState {
     fn default() -> Self {

@@ -1,7 +1,8 @@
 use super::super::*;
 
 #[tauri::command]
-pub(crate) async fn backend_status() -> Result<Option<codex_pilot_core::status::BackendStatus>, String> {
+pub(crate) async fn backend_status()
+-> Result<Option<codex_pilot_core::status::BackendStatus>, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let prefs = load_launch_preferences();
         let helper_port = launch_options_from_preferences(&prefs).helper_port;
@@ -45,7 +46,9 @@ pub(crate) async fn enhancement_settings_snapshot() -> EnhancementSettings {
 }
 
 #[tauri::command]
-pub(crate) async fn save_enhancement_settings(request: EnhancementSettings) -> Result<String, String> {
+pub(crate) async fn save_enhancement_settings(
+    request: EnhancementSettings,
+) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let settings = sanitize_enhancement_settings(request);
         save_enhancement_settings_to_path(&enhancement_settings_path(), &settings)?;

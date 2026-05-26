@@ -6,9 +6,9 @@ use serde_json::Value;
 
 use crate::protocol_proxy::UpstreamProtocol;
 use crate::relay_config::{
-    apply_api_provider_config_to_home_with_protocol, apply_relay_provider_config_to_home,
-    apply_relay_provider_config_to_path, chatgpt_auth_status_from_home,
-    relay_provider_config_from_contents, ChatGptAuthStatus, RELAY_PROVIDER,
+    ChatGptAuthStatus, RELAY_PROVIDER, apply_api_provider_config_to_home_with_protocol,
+    apply_relay_provider_config_to_home, apply_relay_provider_config_to_path,
+    chatgpt_auth_status_from_home, relay_provider_config_from_contents,
 };
 use crate::relay_config_toml::{
     remove_root_key, remove_table, upsert_api_provider_config, upsert_relay_provider_config,
@@ -227,12 +227,9 @@ fn apply_and_clear_create_backups_when_file_exists() {
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(&config_path, "model = \"gpt-5\"\n").unwrap();
 
-    let apply = apply_relay_provider_config_to_path(
-        &config_path,
-        "https://relay.example/v1",
-        "sk-test",
-    )
-    .unwrap();
+    let apply =
+        apply_relay_provider_config_to_path(&config_path, "https://relay.example/v1", "sk-test")
+            .unwrap();
     assert!(apply.configured);
     let apply_backup = PathBuf::from(apply.backup_path.unwrap());
     assert_eq!(
@@ -271,9 +268,8 @@ fn apply_to_home_requires_chatgpt_auth() {
     let root = unique_temp_dir();
     std::fs::create_dir_all(&root).unwrap();
 
-    let error =
-        apply_relay_provider_config_to_home(&root, "https://relay.example/v1", "sk-test")
-            .unwrap_err();
+    let error = apply_relay_provider_config_to_home(&root, "https://relay.example/v1", "sk-test")
+        .unwrap_err();
     assert!(error.to_string().contains("未检测到 ChatGPT 登录状态"));
 
     std::fs::remove_dir_all(root).unwrap();

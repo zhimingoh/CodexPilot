@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::protocol_proxy_sse_common::{
-    append_utf8_safe, strip_sse_field, take_sse_block, ReasoningItemState, TextItemState,
+    ReasoningItemState, TextItemState, append_utf8_safe, strip_sse_field, take_sse_block,
 };
 
 pub fn chat_sse_to_responses_sse(input: &str) -> String {

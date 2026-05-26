@@ -95,9 +95,7 @@ pub(crate) fn save_enhancement_settings_to_path(
     std::fs::write(path, contents).map_err(|error| format!("写入页面增强设置失败：{error}"))
 }
 
-pub(crate) fn sanitize_enhancement_settings(
-    settings: EnhancementSettings,
-) -> EnhancementSettings {
+pub(crate) fn sanitize_enhancement_settings(settings: EnhancementSettings) -> EnhancementSettings {
     settings
 }
 
@@ -182,10 +180,7 @@ pub(crate) fn build_codex_command_preview(app_dir: &Path, debug_port: u16) -> Ve
     }
 }
 
-pub(crate) fn append_launcher_args(
-    command: &mut std::process::Command,
-    prefs: &LaunchPreferences,
-) {
+pub(crate) fn append_launcher_args(command: &mut std::process::Command, prefs: &LaunchPreferences) {
     if !prefs.app_path.is_empty() {
         command.arg("--app-path").arg(&prefs.app_path);
     }

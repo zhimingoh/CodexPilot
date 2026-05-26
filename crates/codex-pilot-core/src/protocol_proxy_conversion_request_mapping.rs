@@ -168,7 +168,9 @@ fn append_responses_item(
             }));
         }
         Some("reasoning") => {
-            if let Some(text) = responses_reasoning_text(item) && !text.is_empty() {
+            if let Some(text) = responses_reasoning_text(item)
+                && !text.is_empty()
+            {
                 *pending_reasoning = Some(text);
             }
         }

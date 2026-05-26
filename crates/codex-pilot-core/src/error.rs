@@ -15,5 +15,8 @@ pub enum ManagerError {
     #[error("{0}")]
     Internal(String),
     #[error("{message}")]
-    WithRecoveryPoint { message: String, recovery_dir: String },
+    WithRecoveryPoint {
+        message: String,
+        recovery_dir: String,
+    },
 }

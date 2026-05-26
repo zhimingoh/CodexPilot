@@ -1,17 +1,16 @@
-use std::path::{Path, PathBuf};
 pub(crate) use crate::provider_store_rules::{
-    infer_effective_route, profiles_equivalent, provider_status_message,
-    sanitize_provider_profile, sanitize_provider_profiles_state, unique_imported_profile_name,
-    unique_profile_id,
+    infer_effective_route, profiles_equivalent, provider_status_message, sanitize_provider_profile,
+    sanitize_provider_profiles_state, unique_imported_profile_name, unique_profile_id,
 };
 pub(crate) use crate::provider_store_types::{
-    default_authenticated_behavior, AppliedProfileResult, AuthenticatedBehavior, BackupCandidate, CcsImportResult,
-    CcsProviderSnapshot, EffectiveRoute, OfficialConfigSnapshot,
-    OfficialSnapshotImportResult, OfficialSnapshotPrepareResult, ProviderApplyRequest,
-    ProviderProfile, ProviderProfileIdRequest, ProviderProfileMode, ProviderProfileSaveRequest,
-    ProviderProfileSaveResponse, ProviderProfilesState, ProviderSnapshot, ProviderSyncRequest,
-    ProviderSyncSnapshot,
+    AppliedProfileResult, AuthenticatedBehavior, BackupCandidate, CcsImportResult,
+    CcsProviderSnapshot, EffectiveRoute, OfficialConfigSnapshot, OfficialSnapshotImportResult,
+    OfficialSnapshotPrepareResult, ProviderApplyRequest, ProviderProfile, ProviderProfileIdRequest,
+    ProviderProfileMode, ProviderProfileSaveRequest, ProviderProfileSaveResponse,
+    ProviderProfilesState, ProviderSnapshot, ProviderSyncRequest, ProviderSyncSnapshot,
+    default_authenticated_behavior,
 };
+use std::path::{Path, PathBuf};
 
 pub(crate) fn provider_profiles_path() -> PathBuf {
     codex_pilot_core::app_paths::app_state_dir().join("provider-profiles.json")
@@ -48,7 +47,9 @@ pub(crate) fn load_provider_profiles() -> ProviderProfilesState {
     load_provider_profiles_from_path(&provider_profiles_path()).unwrap_or_default()
 }
 
-pub(crate) fn load_provider_profiles_from_path(path: &Path) -> Result<ProviderProfilesState, String> {
+pub(crate) fn load_provider_profiles_from_path(
+    path: &Path,
+) -> Result<ProviderProfilesState, String> {
     if !path.exists() {
         return Ok(ProviderProfilesState::default());
     }
@@ -72,7 +73,9 @@ pub(crate) fn save_provider_profiles_to_path(
     std::fs::write(path, contents).map_err(|error| format!("写入中转配置档失败：{error}"))
 }
 
-pub(crate) fn ccs_provider_snapshot_for_state(state: &ProviderProfilesState) -> CcsProviderSnapshot {
+pub(crate) fn ccs_provider_snapshot_for_state(
+    state: &ProviderProfilesState,
+) -> CcsProviderSnapshot {
     let db_path = codex_pilot_core::ccs_import::default_ccs_db_path();
     match codex_pilot_core::ccs_import::list_codex_providers_from_db(&db_path) {
         Ok(candidates) => {

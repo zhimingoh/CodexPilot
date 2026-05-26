@@ -1,8 +1,8 @@
-use serde_json::{Value, json};
 use crate::routes_sessions::{
     archived_thread, delete_recycle_bin_entry, delete_session, export_html, export_markdown,
     list_recycle_bin, move_thread_workspace, thread_sort_key, thread_sort_keys, undo_session,
 };
+use serde_json::{Value, json};
 
 #[derive(Debug, Clone)]
 pub struct BridgeContext {
@@ -140,7 +140,6 @@ fn plugin_patch_status() -> Value {
         }
     })
 }
-
 
 fn apply_provider(payload: Value) -> Value {
     let base_url = payload

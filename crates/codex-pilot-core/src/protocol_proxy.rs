@@ -14,20 +14,20 @@ pub struct UpstreamStreamResponse {
     pub response: reqwest::Response,
 }
 
-pub use crate::protocol_proxy_routes::{
-    ActiveProxyTarget, DEFAULT_PROTOCOL_PROXY_PORT, RouteMode, UpstreamProtocol,
-    anthropic_messages_url, chat_completions_url, is_models_proxy_path,
-    is_responses_proxy_path, local_responses_proxy_base_url, models_url,
-    proxy_base_url_for_protocol, route_mode_for_protocol,
-};
 pub use crate::protocol_proxy_conversion::{
-    anthropic_message_to_response, chat_completion_to_response,
-    responses_to_anthropic_messages, responses_to_chat_completions,
+    anthropic_message_to_response, chat_completion_to_response, responses_to_anthropic_messages,
+    responses_to_chat_completions,
 };
 use crate::protocol_proxy_routes::responses_url;
+pub use crate::protocol_proxy_routes::{
+    ActiveProxyTarget, DEFAULT_PROTOCOL_PROXY_PORT, RouteMode, UpstreamProtocol,
+    anthropic_messages_url, chat_completions_url, is_models_proxy_path, is_responses_proxy_path,
+    local_responses_proxy_base_url, models_url, proxy_base_url_for_protocol,
+    route_mode_for_protocol,
+};
 pub use crate::protocol_proxy_sse::{
-    AnthropicSseToResponsesConverter, ChatSseToResponsesConverter,
-    anthropic_sse_to_responses_sse, chat_sse_to_responses_sse,
+    AnthropicSseToResponsesConverter, ChatSseToResponsesConverter, anthropic_sse_to_responses_sse,
+    chat_sse_to_responses_sse,
 };
 use crate::protocol_proxy_transport::{
     open_anthropic_messages_upstream, open_chat_completions_upstream,

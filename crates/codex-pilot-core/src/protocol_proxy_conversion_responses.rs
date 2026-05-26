@@ -147,14 +147,18 @@ fn chat_reasoning_to_response_output_item(message: &Value, response_id: &str) ->
 
 fn chat_reasoning_text(message: &Value) -> Option<String> {
     for key in ["reasoning_content", "reasoning"] {
-        if let Some(text) = message.get(key).and_then(Value::as_str) && !text.is_empty() {
+        if let Some(text) = message.get(key).and_then(Value::as_str)
+            && !text.is_empty()
+        {
             return Some(text.to_string());
         }
     }
 
     if let Some(reasoning) = message.get("reasoning") {
         for key in ["content", "text", "summary"] {
-            if let Some(text) = reasoning.get(key).and_then(Value::as_str) && !text.is_empty() {
+            if let Some(text) = reasoning.get(key).and_then(Value::as_str)
+                && !text.is_empty()
+            {
                 return Some(text.to_string());
             }
         }
@@ -202,7 +206,9 @@ fn chat_message_to_response_output_item(message: &Value, response_id: &str) -> O
             }
         }
     }
-    if let Some(refusal) = message.get("refusal").and_then(Value::as_str) && !refusal.is_empty() {
+    if let Some(refusal) = message.get("refusal").and_then(Value::as_str)
+        && !refusal.is_empty()
+    {
         content.push(json!({ "type": "refusal", "refusal": refusal }));
     }
 

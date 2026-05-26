@@ -8,7 +8,7 @@ use crate::protocol_proxy_conversion::{
     response_status, split_leading_think_block, strip_leading_think_open_tag,
 };
 use crate::protocol_proxy_sse::{ChatSseState, InlineThinkMode};
-use crate::protocol_proxy_sse_common::{push_sse, ReasoningItemState, TextItemState};
+use crate::protocol_proxy_sse_common::{ReasoningItemState, TextItemState, push_sse};
 
 impl Default for ChatSseState {
     fn default() -> Self {
