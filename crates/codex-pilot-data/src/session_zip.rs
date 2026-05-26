@@ -341,8 +341,11 @@ fn add_directory_recursive(
     options: SimpleFileOptions,
     count: &mut usize,
 ) -> anyhow::Result<()> {
-    for entry in fs::read_dir(current)? {
-        let path = entry?.path();
+    let mut entries: Vec<std::path::PathBuf> = fs::read_dir(current)?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .collect();
+    entries.sort();
+    for path in entries {
         let relative = path
             .strip_prefix(root)
             .with_context(|| format!("strip prefix {}", path.display()))?;
@@ -457,8 +460,11 @@ fn overwrite_directory(source: Option<&Path>, destination: &Path) -> anyhow::Res
 
 fn copy_directory_contents(source: &Path, destination: &Path) -> anyhow::Result<usize> {
     let mut count = 0usize;
-    for entry in fs::read_dir(source)? {
-        let path = entry?.path();
+    let mut entries: Vec<std::path::PathBuf> = fs::read_dir(source)?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .collect();
+    entries.sort();
+    for path in entries {
         let relative = path.strip_prefix(source)?;
         let target = destination.join(relative);
         if path.is_dir() {
@@ -667,5 +673,44 @@ mod tests {
             fs::read_to_string(home.join("sessions/remote.jsonl")).unwrap(),
             "remote"
         );
+    }
+
+    #[test]
+    fn zip_entries_are_sorted_by_relative_path() {
+        let temp = tempdir().unwrap();
+        let home = temp.path().join(".codex");
+        write_file(&home.join("sessions/c.jsonl"), "c");
+        write_file(&home.join("sessions/a.jsonl"), "a");
+        write_file(&home.join("sessions/b.jsonl"), "b");
+        write_file(&home.join("sessions/sub/zzz.jsonl"), "z");
+        write_file(&home.join("sessions/sub/aaa.jsonl"), "a2");
+
+        let service = SessionZipService::new(home);
+        let export = service.export_current_state().unwrap();
+
+        let file = fs::File::open(&export.zip_path).unwrap();
+        let archive = zip::ZipArchive::new(file).unwrap();
+        let session_names: Vec<String> = archive
+            .file_names()
+            .filter(|n| n.contains("/sessions/"))
+            .map(|n| n.to_string())
+            .collect();
+
+        let mut expected = session_names.clone();
+        expected.sort();
+        assert_eq!(
+            session_names, expected,
+            "ZIP 内 sessions/* entry 应按字典序稳定排序"
+        );
+
+        // 多次导出应得到相同顺序。
+        let export2 = service.export_current_state().unwrap();
+        let archive2 = zip::ZipArchive::new(fs::File::open(&export2.zip_path).unwrap()).unwrap();
+        let session_names2: Vec<String> = archive2
+            .file_names()
+            .filter(|n| n.contains("/sessions/"))
+            .map(|n| n.to_string())
+            .collect();
+        assert_eq!(session_names, session_names2);
     }
 }

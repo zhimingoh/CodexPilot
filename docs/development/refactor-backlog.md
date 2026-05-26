@@ -35,7 +35,7 @@
 | T16   | session_zip merge 会话不显示 + 导出顺序调研 | P2 | 1 h | DONE |
 | T17   | sort_key 在 sqlite 缺行时从 rollout 文件名兜底 | P2 | 30 min | DONE |
 | T18   | `thread_sort_keys` 200 静默截断改显式 | P2 | 30 min | DONE |
-| T19   | `session_zip` 导出目录按相对路径稳定排序 | P2 | 20 min | TODO |
+| T19   | `session_zip` 导出目录按相对路径稳定排序 | P2 | 20 min | DONE |
 
 完成顺序建议：T00 → T01 → T02 → T03 → **T11** → T12 → T05 → T04 → T08 → T07 → T06 → T09 → T10 → T13。
 T11 是 T03 验收阻塞项，必须先解。T12 是 T03 发现的漏网鱼，顺手收掉。
