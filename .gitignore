@@ -9,6 +9,8 @@ apps/*/src-tauri/binaries/
 .handoff/
 docs/development/*
 !docs/development/readme-guidelines.md
+!docs/development/refactor-backlog.md
+!docs/development/*-analysis.md
 docs/previews/
 docs/superpowers/
 !docs/superpowers/
