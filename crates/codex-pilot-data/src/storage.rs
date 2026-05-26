@@ -404,15 +404,27 @@ impl SQLiteStorageAdapter {
         }
         match fetch_thread_timestamp_payload(&db, &thread_id)? {
             Some(mut payload) => {
+                payload.insert("source".to_string(), json!("sqlite"));
                 payload.insert("status".to_string(), json!("ok"));
                 payload.insert("session_id".to_string(), json!(thread_id));
                 Ok(Value::Object(payload))
             }
-            None => Ok(json!({
-                "status": "failed",
-                "session_id": thread_id,
-                "message": "thread not found in local storage"
-            })),
+            None => {
+                let sessions_dir = sessions_dir_for(&self.db_path);
+                match rollout_fallback_timestamp_payload(&sessions_dir, &thread_id) {
+                    Some(mut payload) => {
+                        payload.insert("status".to_string(), json!("ok"));
+                        payload.insert("session_id".to_string(), json!(thread_id));
+                        payload.insert("source".to_string(), json!("rollout_fallback"));
+                        Ok(Value::Object(payload))
+                    }
+                    None => Ok(json!({
+                        "status": "failed",
+                        "session_id": thread_id,
+                        "message": "thread not found in local storage"
+                    })),
+                }
+            }
         }
     }
 
@@ -446,10 +458,22 @@ impl SQLiteStorageAdapter {
                 "sort_keys": []
             }));
         }
+        let sessions_dir = sessions_dir_for(&self.db_path);
+        let fallback_map = collect_rollout_timestamps(&sessions_dir);
         let mut sort_keys = Vec::new();
         for thread_id in thread_ids {
             if let Some(mut payload) = fetch_thread_timestamp_payload(&db, &thread_id)? {
                 payload.insert("session_id".to_string(), json!(thread_id));
+                payload.insert("source".to_string(), json!("sqlite"));
+                sort_keys.push(Value::Object(payload));
+            } else if let Some((created_at_ms, updated_at_ms)) = fallback_map.get(&thread_id).copied()
+            {
+                let mut payload = Map::new();
+                payload.insert("session_id".to_string(), json!(thread_id));
+                payload.insert("updated_at".to_string(), Value::Null);
+                payload.insert("updated_at_ms".to_string(), json!(updated_at_ms));
+                payload.insert("created_at_ms".to_string(), json!(created_at_ms));
+                payload.insert("source".to_string(), json!("rollout_fallback"));
                 sort_keys.push(Value::Object(payload));
             }
         }
@@ -1214,6 +1238,108 @@ fn fetch_thread_timestamp_payload(
     }
 }
 
+fn sessions_dir_for(db_path: &Path) -> PathBuf {
+    db_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("sessions")
+}
+
+fn collect_rollout_timestamps(sessions_dir: &Path) -> std::collections::HashMap<String, (i64, i64)> {
+    let mut map = std::collections::HashMap::new();
+    if !sessions_dir.exists() {
+        return map;
+    }
+    walk_rollout_dir(sessions_dir, &mut map);
+    map
+}
+
+fn walk_rollout_dir(dir: &Path, out: &mut std::collections::HashMap<String, (i64, i64)>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            walk_rollout_dir(&path, out);
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some((thread_id, created_at_ms)) = parse_rollout_filename(name) else {
+            continue;
+        };
+        let updated_at_ms = path
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(created_at_ms);
+        out.insert(thread_id, (created_at_ms, updated_at_ms));
+    }
+}
+
+fn days_from_civil_utc(y: i32, m: u32, d: u32) -> i64 {
+    let y = y as i64 - if m <= 2 { 1 } else { 0 };
+    let era = if y >= 0 { y / 400 } else { (y - 399) / 400 };
+    let yoe = y - era * 400;
+    let mm = if m > 2 { m - 3 } else { m + 9 };
+    let doy = (153 * mm as i64 + 2) / 5 + d as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+fn parse_rollout_filename(name: &str) -> Option<(String, i64)> {
+    let stem = name.strip_suffix(".jsonl")?;
+    let body = stem.strip_prefix("rollout-")?;
+    if body.len() < 20 {
+        return None;
+    }
+    let (ts_part, rest) = body.split_at(19);
+    let thread_id = rest.strip_prefix('-')?.to_string();
+    let bytes = ts_part.as_bytes();
+    if bytes.len() != 19
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b'-'
+        || bytes[16] != b'-'
+    {
+        return None;
+    }
+    let year: i32 = ts_part[0..4].parse().ok()?;
+    let month: u32 = ts_part[5..7].parse().ok()?;
+    let day: u32 = ts_part[8..10].parse().ok()?;
+    let hour: u32 = ts_part[11..13].parse().ok()?;
+    let minute: u32 = ts_part[14..16].parse().ok()?;
+    let second: u32 = ts_part[17..19].parse().ok()?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 59
+    {
+        return None;
+    }
+    let days = days_from_civil_utc(year, month, day);
+    let ms = days * 86_400_000
+        + hour as i64 * 3_600_000
+        + minute as i64 * 60_000
+        + second as i64 * 1_000;
+    Some((thread_id, ms))
+}
+
+fn rollout_fallback_timestamp_payload(
+    sessions_dir: &Path,
+    thread_id: &str,
+) -> Option<Map<String, Value>> {
+    let map = collect_rollout_timestamps(sessions_dir);
+    let (created_at_ms, updated_at_ms) = map.get(thread_id).copied()?;
+    let mut payload = Map::new();
+    payload.insert("updated_at".to_string(), Value::Null);
+    payload.insert("updated_at_ms".to_string(), json!(updated_at_ms));
+    payload.insert("created_at_ms".to_string(), json!(created_at_ms));
+    Some(payload)
+}
+
 fn add_timestamp_payload(payload: &mut Map<String, Value>, row: &Map<String, Value>) {
     for column in ["updated_at", "updated_at_ms", "created_at_ms"] {
         payload.insert(
@@ -1894,6 +2020,7 @@ mod tests {
                 .codex_thread_sort_key(&SessionRef::new("t1", None))
                 .unwrap(),
             json!({
+                "source": "sqlite",
                 "status": "ok",
                 "session_id": "t1",
                 "updated_at": 10,
@@ -1912,8 +2039,8 @@ mod tests {
             json!({
                 "status": "ok",
                 "sort_keys": [
-                    {"session_id": "t2", "updated_at": 20, "updated_at_ms": 20000, "created_at_ms": 2},
-                    {"session_id": "t1", "updated_at": 10, "updated_at_ms": 10000, "created_at_ms": 1}
+                    {"session_id": "t2", "updated_at": 20, "updated_at_ms": 20000, "created_at_ms": 2, "source": "sqlite"},
+                    {"session_id": "t1", "updated_at": 10, "updated_at_ms": 10000, "created_at_ms": 1, "source": "sqlite"}
                 ]
             })
         );
@@ -1953,5 +2080,43 @@ mod tests {
 
         let _ = fs::remove_file(db_path);
         let _ = fs::remove_dir_all(adapter.backup_dir());
+    }
+
+    #[test]
+    fn parse_rollout_filename_extracts_id_and_timestamp() {
+        let (id, ms) = parse_rollout_filename(
+            "rollout-2026-03-20T10-56-02-019d092b-dd6b-7f32-8954-5968e66b372a.jsonl",
+        )
+        .expect("should parse");
+        assert_eq!(id, "019d092b-dd6b-7f32-8954-5968e66b372a");
+        assert_eq!(ms, 1_774_004_162_000);
+    }
+
+    #[test]
+    fn parse_rollout_filename_rejects_garbage() {
+        assert!(parse_rollout_filename("garbage.jsonl").is_none());
+        assert!(parse_rollout_filename("rollout-not-a-date.jsonl").is_none());
+        assert!(parse_rollout_filename("rollout-2026-03-20T10-56-02.jsonl").is_none());
+    }
+
+    #[test]
+    fn rollout_fallback_finds_existing_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let nested = tmp.path().join("2026").join("03").join("20");
+        fs::create_dir_all(&nested).unwrap();
+        let fname = "rollout-2026-03-20T10-56-02-019d092b-dd6b-7f32-8954-5968e66b372a.jsonl";
+        fs::write(nested.join(fname), b"{}").unwrap();
+
+        let payload =
+            rollout_fallback_timestamp_payload(tmp.path(), "019d092b-dd6b-7f32-8954-5968e66b372a")
+                .expect("should find");
+        assert_eq!(payload["created_at_ms"], 1_774_004_162_000_i64);
+        assert!(payload["updated_at_ms"].is_i64());
+    }
+
+    #[test]
+    fn rollout_fallback_returns_none_for_missing_id() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        assert!(rollout_fallback_timestamp_payload(tmp.path(), "no-such-id").is_none());
     }
 }
