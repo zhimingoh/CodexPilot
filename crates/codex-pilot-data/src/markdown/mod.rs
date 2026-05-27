@@ -5,47 +5,17 @@ mod render;
 
 use crate::storage::{SchemaKind, SessionRef, has_columns, normalize_session_id, schema_kind};
 use anyhow::Context;
+pub use models::{ExportResult, ExportStatus};
+use models::{Message, MessageBlock, exported, failed, not_found};
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ExportStatus {
-    Exported,
-    NotFound,
-    Failed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ExportResult {
-    pub status: ExportStatus,
-    pub session_id: String,
-    pub message: String,
-    pub filename: Option<String>,
-    pub markdown: Option<String>,
-    pub html: Option<String>,
-}
-
 #[derive(Debug, Clone)]
 pub struct MarkdownExportService {
     db_path: PathBuf,
-}
-
-#[derive(Debug)]
-struct Message {
-    speaker: String,
-    timestamp: Option<String>,
-    blocks: Vec<MessageBlock>,
-}
-
-#[derive(Debug)]
-enum MessageBlock {
-    Text(String),
-    Image(Option<String>),
 }
 
 impl MarkdownExportService {
@@ -777,54 +747,6 @@ fn escape_html(value: &str) -> String {
         }
     }
     output
-}
-
-fn exported(
-    session_id: String,
-    title: &str,
-    messages: &[Message],
-    format: ExportFormat,
-) -> ExportResult {
-    match format {
-        ExportFormat::Markdown => ExportResult {
-            status: ExportStatus::Exported,
-            session_id: session_id.clone(),
-            message: "session exported as Markdown".to_string(),
-            filename: Some(build_filename(title, &session_id, "md")),
-            markdown: Some(render_markdown(title, messages)),
-            html: None,
-        },
-        ExportFormat::Html => ExportResult {
-            status: ExportStatus::Exported,
-            session_id: session_id.clone(),
-            message: "session exported as HTML".to_string(),
-            filename: Some(build_filename(title, &session_id, "html")),
-            markdown: None,
-            html: Some(render_html(title, messages)),
-        },
-    }
-}
-
-fn not_found(session_id: &str, message: &str) -> ExportResult {
-    ExportResult {
-        status: ExportStatus::NotFound,
-        session_id: session_id.to_string(),
-        message: message.to_string(),
-        filename: None,
-        markdown: None,
-        html: None,
-    }
-}
-
-fn failed(session_id: &str, message: impl Into<String>) -> ExportResult {
-    ExportResult {
-        status: ExportStatus::Failed,
-        session_id: session_id.to_string(),
-        message: message.into(),
-        filename: None,
-        markdown: None,
-        html: None,
-    }
 }
 
 fn display_role(role: &str) -> String {
