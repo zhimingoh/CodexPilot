@@ -6,6 +6,12 @@
 
 > **维护者职责（你）**：只做设计 + 验收。不直接写实现代码。所有实现交给 Codex，按本文件顺序推进。
 
+> **Codex 交付协议（每条任务默认套用，T20b 验收实测后加上）**：
+> 1. **Commit message 强制格式**：`T<编号> 第 N 步：<标题>`（或 `T<编号>：<标题>` 单步任务）。禁用 `fix` / `wip` / `update` 这类无信息词。
+> 2. **完成后不要自己 push**：本地 commit 完成、汇报里给出 commit hash 列表即可，等维护者验收后再 push。
+> 3. **汇报必须列每个 commit hash**：用 `git log --oneline -<N>` 把本次任务所有 commit 全列出来，不能只描述步骤。
+> 4. **跨范围 fmt / 收尾改动单独 commit**：如实施末期 `cargo fmt --check` 发现 storage 之外的文件需要格式化（不是本任务引入的），单独起 `chore: workspace cargo fmt 收尾` commit，并在汇报里明确列出。**不要塞进任务收尾步**。
+
 ---
 
 ## 状态总览
