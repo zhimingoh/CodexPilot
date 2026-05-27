@@ -48,7 +48,7 @@
 | T21   | `markdown.rs` 拆分调研+映射一步出（1118 行，38 fn） | P2 | 45 min | DONE |
 | T21b  | `markdown.rs` 按 T21 映射表机械搬运（5 步） | P2 | 1-2 h | DONE |
 | T22   | `provider_sync.rs` 拆分调研+映射一步出（1106 行，41 fn） | P2 | 45 min | DONE |
-| T22b  | `provider_sync.rs` 按 T22 映射表机械搬运（5 步） | P2 | 1-2 h | TODO（依赖 T22） |
+| T22b  | `provider_sync.rs` 按 T22 映射表机械搬运（5 步） | P2 | 1-2 h | DONE |
 
 完成顺序建议：T00 → T01 → T02 → T03 → **T11** → T12 → T05 → T04 → T08 → T07 → T06 → T09 → T10 → T13。
 T11 是 T03 验收阻塞项，必须先解。T12 是 T03 发现的漏网鱼，顺手收掉。
