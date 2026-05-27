@@ -1,4 +1,5 @@
 use super::ExportFormat;
+use super::export::build_filename;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -42,7 +43,7 @@ pub(super) fn exported(
             status: ExportStatus::Exported,
             session_id: session_id.clone(),
             message: "session exported as Markdown".to_string(),
-            filename: Some(super::build_filename(title, &session_id, "md")),
+            filename: Some(build_filename(title, &session_id, "md")),
             markdown: Some(super::render_markdown(title, messages)),
             html: None,
         },
@@ -50,7 +51,7 @@ pub(super) fn exported(
             status: ExportStatus::Exported,
             session_id: session_id.clone(),
             message: "session exported as HTML".to_string(),
-            filename: Some(super::build_filename(title, &session_id, "html")),
+            filename: Some(build_filename(title, &session_id, "html")),
             markdown: None,
             html: Some(super::render_html(title, messages)),
         },
