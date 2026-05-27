@@ -11,7 +11,7 @@ use std::time::UNIX_EPOCH;
 
 /// 单次 `thread_sort_keys` 请求允许查询的去重 id 上限。
 /// 超过这个数量的 id 会被截断，调用方需要分批请求；返回体里 `truncated` 字段会显式标记。
-pub(crate) const MAX_SORT_KEY_BATCH: usize = 200;
+const MAX_SORT_KEY_BATCH: usize = 200;
 
 impl SQLiteStorageAdapter {
     pub fn find_archived_thread_by_title(&self, title: &str) -> anyhow::Result<Option<SessionRef>> {

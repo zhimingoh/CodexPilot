@@ -38,6 +38,7 @@
 | T19   | `session_zip` 导出目录按相对路径稳定排序 | P2 | 20 min | DONE |
 | T20a  | `storage.rs` 拆分映射表调研（51 个内部 helper 归属） | P2 | 1 h | DONE |
 | T20b  | `storage.rs` 按 T20a 映射表机械搬运 | P2 | 2-3 h | DONE |
+| T20c  | `MAX_SORT_KEY_BATCH` 收窄到模块私有 | P2 | 1 min | DONE |
 
 完成顺序建议：T00 → T01 → T02 → T03 → **T11** → T12 → T05 → T04 → T08 → T07 → T06 → T09 → T10 → T13。
 T11 是 T03 验收阻塞项，必须先解。T12 是 T03 发现的漏网鱼，顺手收掉。
