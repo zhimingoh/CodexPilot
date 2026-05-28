@@ -46,11 +46,6 @@ pub(crate) fn resolve_launcher_path() -> Result<std::path::PathBuf, String> {
 pub(crate) async fn launch_snapshot(
     state: tauri::State<'_, ManagerState>,
 ) -> Result<LaunchSnapshot, String> {
-    let current = state
-        .launch_state
-        .lock()
-        .map_err(|_| "启动状态锁已损坏")?
-        .clone();
     let prefs = load_launch_preferences();
     let options = launch_options_from_preferences(&prefs);
     let app_dir = codex_pilot_core::app_paths::resolve_codex_app_dir(options.app_dir.as_deref());
@@ -60,10 +55,22 @@ pub(crate) async fn launch_snapshot(
         .map(|path| build_codex_command_preview(path, options.debug_port))
         .unwrap_or_else(Vec::new);
 
-    let manager_running = matches!(current, LaunchState::Running);
     let helper_reachable = codex_pilot_core::ports::can_connect_loopback_port(options.helper_port);
     let debug_reachable = codex_pilot_core::ports::can_connect_loopback_port(options.debug_port);
-    let codex_running = if manager_running || helper_reachable {
+
+    // Self-heal：若持久化状态停留在 Running 但 helper 端口已不可达（例如 Codex 已退出），降级为 Idle，
+    // 让 action_kind 重新回到“启动 Codex”。
+    let current = {
+        let mut guard = state.launch_state.lock().map_err(|_| "启动状态锁已损坏")?;
+        if matches!(*guard, LaunchState::Running) && !helper_reachable {
+            *guard = LaunchState::Idle;
+            set_cached_codex_process_running(&state, false);
+        }
+        guard.clone()
+    };
+
+    let manager_running = matches!(current, LaunchState::Running);
+    let codex_running = if helper_reachable {
         set_cached_codex_process_running(&state, true);
         true
     } else {

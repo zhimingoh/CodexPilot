@@ -138,6 +138,35 @@ function App() {
   }, [refresh]);
 
   React.useEffect(() => {
+    const intervalMs = launch?.actionKind === "running" ? 15000 : 5000;
+    let timer: number | null = null;
+    const tick = () => {
+      if (document.visibilityState === "visible") {
+        refresh(true);
+      }
+    };
+    const start = () => {
+      if (timer !== null) return;
+      timer = window.setInterval(tick, intervalMs);
+    };
+    const stop = () => {
+      if (timer === null) return;
+      window.clearInterval(timer);
+      timer = null;
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") start();
+      else stop();
+    };
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      stop();
+    };
+  }, [refresh, launch?.actionKind]);
+
+  React.useEffect(() => {
     let unlisten: (() => void) | null = null;
     let cancelled = false;
     listen("launch_state_changed", () => {
@@ -308,24 +337,22 @@ function App() {
             <button className="secondary iconButton" onClick={() => refresh()} title="刷新" type="button">
               <RefreshCw size={16} />
             </button>
-            {(activeView === "overview" || activeView === "launch") && (
-              <button className="primary" disabled={launching || !canRunLaunchAction(launch)} onClick={handleLaunch} type="button">
-                {launch?.actionKind === "running" ? (
-                  <CheckCircle2 size={16} />
-                ) : launch?.actionKind === "reinject" || launch?.actionKind === "restart" ? (
-                  <RotateCcw size={16} />
-                ) : (
-                  <Play size={16} />
-                )}
-                {launching
-                  ? "处理中"
-                  : launch?.actionKind === "running"
-                    ? "已连接"
-                    : launch?.actionKind === "restart" && restartConfirming
-                      ? "再次点击确认"
-                      : launch?.actionLabel ?? "启动 Codex"}
-              </button>
-            )}
+            <button className="primary" disabled={launching || !canRunLaunchAction(launch)} onClick={handleLaunch} type="button">
+              {launch?.actionKind === "running" ? (
+                <CheckCircle2 size={16} />
+              ) : launch?.actionKind === "reinject" || launch?.actionKind === "restart" ? (
+                <RotateCcw size={16} />
+              ) : (
+                <Play size={16} />
+              )}
+              {launching
+                ? "处理中"
+                : launch?.actionKind === "running"
+                  ? "已连接"
+                  : launch?.actionKind === "restart" && restartConfirming
+                    ? "再次点击确认"
+                    : launch?.actionLabel ?? "启动 Codex"}
+            </button>
           </div>
         </header>
 
