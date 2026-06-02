@@ -20,7 +20,7 @@
   <a href="Cargo.toml"><img alt="Rust workspace" src="https://img.shields.io/badge/Rust-workspace-b7410e" /></a>
 </p>
 
-CodexPilot is for people who already use Codex App locally. It provides a local manager and connects to running Codex pages through Chromium DevTools Protocol. Use it to launch Codex, export sessions, manage the recycle bin, sync Provider ownership, configure Hybrid Relay, and inspect diagnostics, without modifying Codex App's installed files or replacing the app.
+CodexPilot is for people who already use Codex App locally. It provides a local manager and connects to running Codex pages through Chromium DevTools Protocol. Use it to launch Codex, export sessions, manage the recycle bin, sync Provider ownership, and inspect diagnostics, without modifying Codex App's installed files or replacing the app.
 
 > CodexPilot is unofficial and is not affiliated with OpenAI or Codex App.
 
@@ -33,8 +33,7 @@ CodexPilot is for people who already use Codex App locally. It provides a local 
    - macOS Apple Silicon: if the release provides `CodexPilot-*-macos-arm64.dmg`, open it and drag `CodexPilot.app` into Applications.
 2. Open the CodexPilot manager, go to Launch, confirm the Codex path, and click Launch.
 3. After Codex opens, use the CodexPilot menu to export the current session.
-4. For custom model requests, configure Hybrid Relay in Model Channel.
-5. To maintain historical sessions, use Dialog Maintenance for recycle bin cleanup or Provider ownership sync.
+4. To maintain historical sessions, use Dialog Maintenance for recycle bin cleanup or Provider ownership sync.
 
 Current macOS packages are not signed with an Apple Developer ID and are not notarized. If macOS cannot verify the app, read the note inside the DMG before using the bundled helper script.
 
@@ -42,17 +41,9 @@ macOS Intel builds are not currently published as verified release assets. If yo
 
 ## Highlights
 
-### Hybrid Relay
-
-Hybrid Relay is a key CodexPilot feature. It keeps the official Codex/ChatGPT login state while routing model requests to a custom compatible API. This lets you keep using mobile ChatGPT to control or continue desktop Codex, while desktop Codex sends model requests through your own relay provider.
-
-The custom Provider receives those model requests, so its privacy, billing, and data handling policies apply.
-
-![CodexPilot model channel page](docs/images/readme-provider.png)
-
 ### Provider Ownership Sync
 
-After switching model channels, historical sessions may disappear or group incorrectly because their Provider metadata no longer matches. CodexPilot does not rewrite historical data automatically; in Dialog Maintenance, you can preview the impact first, then manually sync session ownership to the selected Provider.
+After ccSwitch or another tool changes `model_provider` in `~/.codex/config.toml`, historical sessions may disappear or group incorrectly because their Provider metadata no longer matches. CodexPilot does not rewrite historical data automatically; in Dialog Maintenance, you can preview the impact first, then manually sync session ownership to the current config provider or a manually entered Provider.
 
 ![CodexPilot dialog maintenance page](docs/images/readme-dialog-maintenance.png)
 
@@ -69,15 +60,15 @@ See [docs/features.en.md](docs/features.en.md) for the full feature guide.
 
 ## Local Data And Security
 
-CodexPilot reads or writes configuration, sessions, archived sessions, state databases, and backup directories under your local `~/.codex` directory. Relay profiles are stored locally. API keys are hidden in status panels, but they are still written to local configuration files.
+CodexPilot reads the current Provider from your local `~/.codex/config.toml` and reads or writes sessions, archived sessions, state databases, and backup directories under `~/.codex`.
 
-Use CodexPilot only on trusted devices, and avoid uploading local config, logs, screenshots, or backup directories to public repositories. When using a custom compatible API, verify the provider's privacy, billing, and data handling policies yourself.
+Use CodexPilot only on trusted devices, and avoid uploading local config, logs, screenshots, or backup directories to public repositories. Model Provider switching and API key management should be handled by ccSwitch or your own Codex configuration flow.
 
 See the [feature guide](docs/features.en.md#local-data-and-security) for the full data scope.
 
 ## Docs
 
-- [Feature guide](docs/features.en.md): launch, model channels, dialog maintenance, Provider sync, diagnostics, and local data.
+- [Feature guide](docs/features.en.md): launch, dialog maintenance, Provider sync, diagnostics, and local data.
 - [README guidelines](docs/development/readme-guidelines.md): homepage information architecture and copy rules, currently in Chinese.
 
 ## Support

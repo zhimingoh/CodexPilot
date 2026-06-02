@@ -1,5 +1,7 @@
 # Provider Auto Relay With Official Fallback
 
+> Deprecated 2026-06-02 by T-PROV. CodexPilot no longer ships automatic relay fallback/provider-profile behavior; Provider switching is delegated to ccSwitch. Provider Sync remains as dialog maintenance and follows `~/.codex/config.toml`.
+
 ## Context
 
 The current `模型通道` page still asks the user to choose an explicit channel

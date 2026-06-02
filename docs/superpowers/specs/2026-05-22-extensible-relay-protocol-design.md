@@ -1,5 +1,7 @@
 # Extensible Relay Protocol Design
 
+> Deprecated 2026-06-02 by T-PROV. CodexPilot no longer ships relay/protocol proxy/provider-profile code; Provider switching is delegated to ccSwitch. Provider Sync remains as dialog maintenance and follows `~/.codex/config.toml`.
+
 ## Context
 
 CodexPilot currently assumes that every custom upstream already speaks Codex's

@@ -1,5 +1,7 @@
 # Provider Profile Edit And Activation Design
 
+> Deprecated 2026-06-02 by T-PROV. CodexPilot no longer ships the Provider profile/model-channel page; Provider switching is delegated to ccSwitch. Provider Sync remains as dialog maintenance and follows `~/.codex/config.toml`.
+
 ## Context
 
 The current `模型通道` page now supports:

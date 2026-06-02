@@ -1,5 +1,7 @@
 # CCSwitch Config Import Design
 
+> Deprecated 2026-06-02 by T-PROV. CodexPilot no longer imports CCSwitch providers into local relay profiles; ccSwitch owns Provider switching directly. Provider Sync remains as dialog maintenance and follows `~/.codex/config.toml`.
+
 ## Context
 
 CodexPilot already has a local provider/profile model for `模型通道`, but it
@@ -284,4 +286,3 @@ button.
   instead of overwriting existing profiles.
 - Import result feedback reports imported/skipped/renamed counts.
 - Missing CCS database and malformed individual rows do not crash the page.
-

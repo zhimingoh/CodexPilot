@@ -1,5 +1,7 @@
 # Provider Channel Simplification Design
 
+> Deprecated 2026-06-02 by T-PROV. CodexPilot no longer ships its own Provider / relay / model-channel feature; Provider switching is delegated to ccSwitch. Provider Sync remains as dialog maintenance and follows `~/.codex/config.toml`.
+
 > Updated by `2026-05-22-extensible-relay-protocol-design.md`.
 > The newer design keeps this page's simplification goals, but expands the
 > product model to support protocol-aware API channels and reintroduces a
