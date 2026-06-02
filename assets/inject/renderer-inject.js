@@ -381,7 +381,7 @@
         opacity: 0;
         pointer-events: none;
         position: absolute;
-        right: 108px;
+        right: 140px;
         top: 50%;
         padding: 0;
         transform: translateY(-50%);
