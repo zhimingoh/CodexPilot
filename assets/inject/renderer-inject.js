@@ -980,19 +980,6 @@
     const group = document.createElement("div");
     group.className = actionGroupClass;
 
-    const exportButton = document.createElement("button");
-    exportButton.type = "button";
-    exportButton.className = actionButtonClass;
-    setIconButtonContent(
-      exportButton,
-      "导出 Markdown",
-      '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>'
-    );
-    installRowActionEvents(exportButton, async (event) => {
-      stopRowActionEvent(event);
-      await exportSession(session);
-    });
-
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = actionButtonClass;
@@ -1007,7 +994,7 @@
       await deleteSession(session, row);
     });
 
-    group.append(exportButton, deleteButton);
+    group.append(deleteButton);
     row.appendChild(group);
   }
 
