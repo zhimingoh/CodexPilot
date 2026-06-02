@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Child;
 
-const INJECTION_MAX_ATTEMPTS: usize = 2;
+// Codex 冷启动后，CDP 页面 target 通常要几秒才就绪。注入在这个截止时间内持续重试，
+// 以熬过首启竞态；上限保持小于 manager 端的启动/注入超时（25s），确保 launcher 能在
+// manager 放弃前完成注入并写入运行状态。
+const INJECTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const INJECTION_RETRY_DELAY_MS: u64 = 500;
 
 #[derive(Debug, Clone)]
@@ -281,22 +284,20 @@ fn detect_codex_process_running() -> bool {
 
 pub async fn inject_running_codex(debug_port: u16, helper_port: u16) -> anyhow::Result<()> {
     let script = crate::assets::injection_script(helper_port);
-    let mut last_error = None;
-    for attempt in 0..INJECTION_MAX_ATTEMPTS {
+    let retry_delay = std::time::Duration::from_millis(INJECTION_RETRY_DELAY_MS);
+    let deadline = std::time::Instant::now() + INJECTION_TIMEOUT;
+    loop {
         match inject_bridge(debug_port, helper_port, &script).await {
             Ok(()) => return Ok(()),
             Err(error) => {
-                last_error = Some(error);
-                if attempt + 1 < INJECTION_MAX_ATTEMPTS {
-                    tokio::time::sleep(std::time::Duration::from_millis(INJECTION_RETRY_DELAY_MS))
-                        .await;
+                // 没有足够时间再试一次时，返回最近一次的失败原因。
+                if std::time::Instant::now() + retry_delay >= deadline {
+                    return Err(error);
                 }
             }
         }
+        tokio::time::sleep(retry_delay).await;
     }
-    Err(last_error.unwrap_or_else(|| {
-        anyhow::anyhow!("Codex injection failed: CDP port did not become available")
-    }))
 }
 
 async fn inject_bridge(debug_port: u16, helper_port: u16, script: &str) -> anyhow::Result<()> {
