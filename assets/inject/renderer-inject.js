@@ -468,7 +468,7 @@
         opacity: 0;
         pointer-events: none;
         position: absolute;
-        right: 140px;
+        left: 8px;
         top: 50%;
         padding: 0;
         transform: translateY(-50%);
@@ -484,8 +484,8 @@
 
       [data-codex-pilot-row="true"]:hover [data-thread-title],
       [data-codex-pilot-row="true"]:focus-within [data-thread-title] {
-        -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 132px), transparent calc(100% - 116px));
-        mask-image: linear-gradient(90deg, #000 calc(100% - 132px), transparent calc(100% - 116px));
+        -webkit-mask-image: linear-gradient(90deg, transparent 0, transparent 42px, #000 58px, #000 100%);
+        mask-image: linear-gradient(90deg, transparent 0, transparent 42px, #000 58px, #000 100%);
       }
 
       .${actionButtonClass},

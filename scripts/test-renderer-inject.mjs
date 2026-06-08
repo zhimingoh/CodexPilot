@@ -585,12 +585,12 @@ async function flushAsyncWork() {
   assert.equal(rowActionGroup.children.length, 1, "会话行操作组只包含删除按钮");
   const styleText = document.getElementById("codex-pilot-style").textContent;
   const rowActionsStyle = styleText.match(/\.codex-pilot-row-actions\s*\{[^}]+\}/)?.[0] || "";
-  assert.match(rowActionsStyle, /right:\s*140px;/, "会话行操作组应落在原导出按钮位置，避开 Codex 原生右侧按钮");
-  assert.doesNotMatch(rowActionsStyle, /left:\s*\d+px;/, "会话行操作组不应同时保留左侧定位");
+  assert.match(rowActionsStyle, /left:\s*8px;/, "会话行操作组应固定在标题左侧");
+  assert.doesNotMatch(rowActionsStyle, /right:\s*\d+px;/, "会话行操作组不应同时保留右侧定位");
   assert.match(
     styleText,
-    /mask-image:\s*linear-gradient\(90deg,\s*#000 calc\(100% - 132px\),\s*transparent calc\(100% - 116px\)/,
-    "悬停时应遮罩标题右侧，避免文字与操作按钮重叠"
+    /mask-image:\s*linear-gradient\(90deg,\s*transparent 0,\s*transparent 42px,\s*#000 58px/,
+    "悬停时应遮罩标题左侧，避免文字与操作按钮重叠"
   );
 
   const timeline = document.getElementById("codex-pilot-timeline");
