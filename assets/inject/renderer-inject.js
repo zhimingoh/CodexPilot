@@ -59,6 +59,7 @@
   let fastModuleLoadPromise = null;
   let fastDispatcherPatchInstalled = false;
   let fastDispatcherPatchPromise = null;
+  let fastDispatcherPatchStatus = "loading";
   let routeTrackingInstalled = false;
   const backendStatusTimeoutMs = 2000;
   const backendRecoveryThreshold = 3;
@@ -91,6 +92,11 @@
         const url = codexAppAssetUrl(namePart);
         if (!url) throw new Error(`未找到 Codex App asset: ${namePart}`);
         return await import(url);
+      }).catch((error) => {
+        if (fastModuleLoadPromise === promise) {
+          fastModuleLoadPromise = null;
+        }
+        throw error;
       });
       promise.namePart = namePart;
       fastModuleLoadPromise = promise;
@@ -1005,8 +1011,12 @@
     if (fastToggleButton) {
       fastToggleButton.dataset.mode = state.mode;
       fastToggleButton.dataset.source = state.source;
-      fastToggleButton.title = currentServiceTierTooltip(state);
-      fastToggleButton.setAttribute("aria-label", currentServiceTierTooltip(state));
+      fastToggleButton.dataset.patchStatus = fastDispatcherPatchStatus;
+      const disabled = fastDispatcherPatchStatus !== "ready";
+      fastToggleButton.disabled = disabled;
+      const label = disabled ? "Fast 暂不可用，正在连接 Codex 请求通道" : currentServiceTierTooltip(state);
+      fastToggleButton.title = label;
+      fastToggleButton.setAttribute("aria-label", label);
     }
     if (fastToggleLabel) {
       fastToggleLabel.textContent = state.mode === "fast" ? "Fast" : "";
@@ -1014,6 +1024,12 @@
   }
 
   function toggleCurrentServiceTierMode() {
+    if (fastDispatcherPatchStatus !== "ready") {
+      showToast("Fast 暂不可用，正在连接 Codex 请求通道", null);
+      reportRendererEvent("thread_fast_toggle_blocked", { patch_status: fastDispatcherPatchStatus });
+      refreshFastToggleUi();
+      return;
+    }
     const state = currentServiceTierUiState();
     const nextMode = state.mode === "fast" ? "standard" : "fast";
     const sessionId = currentServiceTierSessionKey();
@@ -1051,18 +1067,36 @@
 
   function sessionRefFromUrl() {
     const href = String(window.location.href || "");
-    const patterns = [
-      /(?:session|conversation|thread)[=/:-]([A-Za-z0-9_.-]{8,})/i,
-      /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:[/?#]|$)/i,
-      /\/([A-Za-z0-9_-]{12,})(?:[/?#]|$)/
-    ];
-    for (const pattern of patterns) {
-      const match = href.match(pattern);
-      if (match?.[1]) {
-        return { session_id: match[1], title: document.title || "当前会话", source: "url" };
+    const sessionId = sessionIdFromUrl(href);
+    return sessionId ? { session_id: sessionId, title: document.title || "当前会话", source: "url" } : null;
+  }
+
+  function sessionIdFromUrl(href) {
+    try {
+      const url = new URL(href);
+      for (const key of ["session", "conversation", "thread"]) {
+        const value = validServiceTierSessionKey(url.searchParams.get(key));
+        if (value) return value;
       }
+      const hashQueryIndex = url.hash.indexOf("?");
+      if (hashQueryIndex >= 0) {
+        const hashParams = new URLSearchParams(url.hash.slice(hashQueryIndex + 1));
+        for (const key of ["session", "conversation", "thread"]) {
+          const value = validServiceTierSessionKey(hashParams.get(key));
+          if (value) return value;
+        }
+      }
+      const segments = url.pathname.split("/").map((segment) => segment.trim()).filter(Boolean);
+      for (let index = segments.length - 1; index >= 0; index -= 1) {
+        const decoded = decodeURIComponent(segments[index]);
+        const value = validServiceTierSessionKey(decoded);
+        if (value) return value;
+      }
+    } catch (_error) {
+      const match = String(href || "").match(/(?:[?&#]|^)(?:session|conversation|thread)=([A-Za-z0-9_.-]{8,})/i);
+      return validServiceTierSessionKey(match?.[1]);
     }
-    return null;
+    return "";
   }
 
   function sessionRefFromSelectedRow() {
@@ -1965,9 +1999,16 @@
   }
 
   function installServiceTierDispatcherPatch() {
-    if (window.__codexPilotFastDispatcherPatchInstalled === fastDispatcherPatchVersion) return;
+    if (window.__codexPilotFastDispatcherPatchInstalled === fastDispatcherPatchVersion) {
+      fastDispatcherPatchInstalled = true;
+      fastDispatcherPatchStatus = "ready";
+      refreshFastToggleUi();
+      return;
+    }
     if (fastDispatcherPatchInstalled) return;
     if (fastDispatcherPatchPromise) return;
+    fastDispatcherPatchStatus = "loading";
+    refreshFastToggleUi();
     fastDispatcherPatchPromise = Promise.resolve().then(async () => {
       try {
         const module = await loadCodexAppModule("setting-storage-");
@@ -1979,7 +2020,9 @@
         const originalDispatch = dispatcher.__codexPilotOriginalDispatchMessage || dispatcher.dispatchMessage.bind(dispatcher);
         if (dispatcher.__codexPilotFastPatchVersion === fastDispatcherPatchVersion) {
           fastDispatcherPatchInstalled = true;
+          fastDispatcherPatchStatus = "ready";
           window.__codexPilotFastDispatcherPatchInstalled = fastDispatcherPatchVersion;
+          refreshFastToggleUi();
           return;
         }
         dispatcher.__codexPilotOriginalDispatchMessage = originalDispatch;
@@ -1991,11 +2034,15 @@
         };
         dispatcher.__codexPilotFastPatchVersion = fastDispatcherPatchVersion;
         fastDispatcherPatchInstalled = true;
+        fastDispatcherPatchStatus = "ready";
         window.__codexPilotFastDispatcherPatchInstalled = fastDispatcherPatchVersion;
+        refreshFastToggleUi();
         reportRendererEvent("thread_fast_dispatcher_patch_installed", {});
       } catch (error) {
+        fastDispatcherPatchStatus = "unavailable";
         reportRendererEvent("thread_fast_dispatcher_patch_failed", { message: String(error) });
         fastDispatcherPatchPromise = null;
+        refreshFastToggleUi();
       }
     });
   }

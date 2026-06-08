@@ -278,6 +278,7 @@ function createFixture({
   messages,
   url = "https://chatgpt.com/codex",
   delaySettingStorageImport = false,
+  failSettingStorageImportOnce = false,
   enhancementSettings = {}
 } = {}) {
   const document = new MiniDocument();
@@ -353,6 +354,9 @@ function createFixture({
       __CODEX_PILOT_TEST_LOAD_CODEX_APP_MODULE__(namePart) {
         assert.equal(namePart, "setting-storage-", "Fast dispatcher patch 应加载 Codex setting storage 模块");
         settingStorageImportStarted += 1;
+        if (failSettingStorageImportOnce && settingStorageImportStarted === 1) {
+          return Promise.reject(new Error("setting storage not ready"));
+        }
         if (delaySettingStorageImport) {
           return new Promise((resolve) => {
             releaseSettingStorageImport = () => resolve(settingStorageModule);
@@ -518,7 +522,7 @@ async function deleteSelected(fixture) {
 }
 
 async function flushAsyncWork() {
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < 16; index += 1) {
     await Promise.resolve();
   }
 }
@@ -719,6 +723,8 @@ async function flushAsyncWork() {
   const fastToggle = root.querySelector(".codex-pilot-fast-toggle");
   const panelToggle = root.querySelector(".codex-pilot-button");
   assert.ok(fastToggle, "Pilot pill 应显示 Fast 闪电按钮");
+  assert.equal(fastToggle.dataset.patchStatus, "ready", "dispatcher patch 安装成功后 Fast 才可用");
+  assert.equal(fastToggle.disabled, false, "dispatcher patch ready 后 Fast 按钮应可点击");
   const openBeforeFastClick = root.dataset.open;
   await fastToggle.click();
   assert.equal(root.dataset.open, openBeforeFastClick, "点击 Fast 不能打开 Pilot 面板");
@@ -842,16 +848,32 @@ async function flushAsyncWork() {
   fixture.context.window.location.href = "https://chatgpt.com/codex/thread-selected-12345";
   const state = api.uiState();
   assert.equal(state.source, "none", "已有会话没有 override 时不应显示新对话 draft 状态");
-  assert.equal(state.sessionId, "selected-12345", "已有会话 UI 状态应保留当前 thread id");
+  assert.equal(state.sessionId, "thread-selected-12345", "已有会话 UI 状态应保留完整当前 thread id");
   assert.equal(state.mode, "standard", "已有会话没有 override 时应显示 Standard");
 
   const start = api.override({
     type: "send-cli-request-for-host",
     method: "thread/start",
-    params: { threadId: "selected-12345", prompt: "existing thread start" }
+    params: { threadId: "thread-selected-12345", prompt: "existing thread start" }
   });
   assert.equal(start.params.serviceTier, undefined, "带已有 threadId 的 thread/start 不应消费 draft");
   assert.ok(api.state().draft, "已有 threadId 请求不能清理下一条新对话 draft");
+}
+
+{
+  const fixture = createFixture({ url: "https://chatgpt.com/codex/thread-selected-12345" });
+  await flushAsyncWork();
+  const api = fixture.context.window.__CODEX_PILOT_FAST_TEST__;
+  api.clear();
+  const fastToggle = fixture.document.getElementById("codex-pilot-root").querySelector(".codex-pilot-fast-toggle");
+  await fastToggle.click();
+  assert.equal(api.state().entries["thread-selected-12345"].mode, "fast", "URL path thread id 应与 sidebar/request key 保持一致");
+  const turn = api.override({
+    type: "send-cli-request-for-host",
+    method: "turn/start",
+    params: { threadId: "thread-selected-12345", input: "continue" }
+  });
+  assert.equal(turn.params.serviceTier, "priority", "URL 上切换 Fast 后同一 thread 的 turn/start 应使用 priority");
 }
 
 {
@@ -874,13 +896,18 @@ async function flushAsyncWork() {
   assert.ok(routeInterval, "Fast draft 绑定应安装独立 route/session 监听");
   routeInterval.callback();
   await flushAsyncWork();
-  assert.equal(api.state().entries["new-98765"].mode, "fast", "scrollRestore 关闭时 draft 仍应绑定到新 thread");
+  assert.equal(api.state().entries["thread-new-98765"].mode, "fast", "scrollRestore 关闭时 draft 仍应绑定到新 thread");
   assert.equal(api.state().draft, null, "绑定成功后应清理 draft");
 }
 
 {
   const fixture = createFixture({ delaySettingStorageImport: true });
   await flushAsyncWork();
+  const fastToggle = fixture.document.getElementById("codex-pilot-root").querySelector(".codex-pilot-fast-toggle");
+  assert.equal(fastToggle.disabled, true, "dispatcher patch 加载中 Fast 按钮应禁用");
+  await fastToggle.click();
+  assert.equal(fastToggle.dataset.mode, "standard", "patch 未 ready 前点击不能创建 Fast draft");
+  assert.equal(fixture.context.window.__CODEX_PILOT_FAST_TEST__.state().draft, null, "patch 未 ready 前不能写入 draft 状态");
   const installInterval = fixture.intervals.find((item) => item.delay === 1500);
   assert.ok(installInterval, "应启动刷新 interval");
   installInterval.callback();
@@ -895,6 +922,35 @@ async function flushAsyncWork() {
     params: { prompt: "hello" }
   });
   assert.equal(fixture.dispatchedMessages.length, 1, "dispatcher 只能被包装一层");
+}
+
+{
+  const fixture = createFixture({ failSettingStorageImportOnce: true });
+  await flushAsyncWork();
+  const root = fixture.document.getElementById("codex-pilot-root");
+  const fastToggle = root.querySelector(".codex-pilot-fast-toggle");
+  assert.equal(fastToggle.disabled, true, "dispatcher patch 首次失败后 Fast 按钮应保持不可用");
+  assert.equal(fastToggle.dataset.patchStatus, "unavailable", "首次加载失败应进入 unavailable 状态");
+  assert.equal(fixture.settingStorageImportStarted(), 1, "首次安装应尝试加载一次 dispatcher module");
+
+  const installInterval = fixture.intervals.find((item) => item.delay === 1500);
+  assert.ok(installInterval, "应启动刷新 interval");
+  installInterval.callback();
+  await flushAsyncWork();
+  assert.equal(fixture.settingStorageImportStarted(), 2, "失败后的下一轮应重新加载 dispatcher module");
+  assert.equal(fastToggle.dataset.patchStatus, "ready", "dispatcher patch 重试成功后 Fast 应可用");
+  assert.equal(fastToggle.disabled, false, "dispatcher patch 重试成功后按钮应启用");
+
+  await fastToggle.click();
+  fixture.dispatcher.dispatchMessage("send-cli-request-for-host", {
+    method: "thread/start",
+    params: { prompt: "hello after retry" }
+  });
+  assert.equal(
+    fixture.dispatchedMessages[0].payload.params.serviceTier,
+    "priority",
+    "dispatcher patch 重试成功后 Fast draft 应改写首请求"
+  );
 }
 
 console.log("renderer-inject fixture tests passed");
