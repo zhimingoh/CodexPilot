@@ -40,6 +40,9 @@ jobs:
       - name: Install create-dmg
         run: brew install create-dmg
 
+      - name: Install Python packaging dependencies
+        run: python3 -m pip install Pillow
+
       - name: Install frontend dependencies
         working-directory: apps/codex-pilot-manager
         run: npm ci
