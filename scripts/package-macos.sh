@@ -58,17 +58,27 @@ rm -rf "$APP_PATH"
 sign_app_ad_hoc() {
   local app_path="$1"
   local executable
+  local executable_path
+  local candidate
 
   executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+  executable_path="$app_path/Contents/MacOS/$executable"
 
-  codesign --force --sign - "$app_path/Contents/MacOS/$executable"
+  if [[ ! -f "$executable_path" ]]; then
+    echo "未找到 app 主程序：$executable_path" >&2
+    exit 1
+  fi
 
-  while IFS= read -r sidecar; do
-    [[ "$sidecar" == "$app_path/Contents/MacOS/$executable" ]] && continue
-    codesign --force --sign - "$sidecar"
-  done < <(find "$app_path/Contents/MacOS" -type f -perm -111)
+  while IFS= read -r -d '' candidate; do
+    [[ "$candidate" == "$executable_path" ]] && continue
+    if [[ "$(file -b "$candidate" 2>/dev/null || true)" == *"Mach-O"* ]]; then
+      chmod +x "$candidate"
+      codesign --force --sign - "$candidate"
+    fi
+  done < <(find "$app_path/Contents" -type f -print0)
 
-  codesign --force --deep --sign - "$app_path"
+  codesign --force --sign - "$executable_path"
+  codesign --force --sign - "$app_path"
   codesign --verify --deep --strict "$app_path"
   codesign -dv "$app_path" >/dev/null 2>&1
 }
