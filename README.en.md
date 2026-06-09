@@ -32,7 +32,7 @@ CodexPilot is for people who already use Codex App locally. It provides a local 
    - Windows: download `CodexPilot-*-windows-x64-setup.exe` and run the installer.
    - macOS Apple Silicon: if the release provides `CodexPilot-*-macos-arm64.dmg`, open it and drag `CodexPilot.app` into Applications.
 2. Open the CodexPilot manager, go to Launch, confirm the Codex path, and click Launch.
-3. After Codex opens, use the CodexPilot menu to export the current session.
+3. After Codex opens, use the CodexPilot menu to export the current session, or use the Fast control in the Pilot pill to choose the service tier.
 4. To maintain historical sessions, use Dialog Maintenance for recycle bin cleanup or to run Dialog Sync.
 
 Current macOS packages are not signed with an Apple Developer ID and are not notarized. If macOS cannot verify the app, read the note inside the DMG before using the bundled helper script.
@@ -53,6 +53,16 @@ After unlock succeeds, the native Codex sidebar shows `Plugins - Unlocked` direc
 
 ![CodexPilot unlocked plugin sidebar snippet](docs/images/readme-plugin-unlocked-snippet.png)
 
+### Global Fast And Per-Dialog Fast
+
+The Launch page includes `Global Fast` under Page Enhancements, and it is enabled by default. When enabled, CodexPilot rewrites all dialog requests to the Fast (`priority`) service tier, which fits workflows where lower waiting time should be the default.
+
+![CodexPilot global Fast pill state](docs/images/readme-fast-global.png)
+
+When `Global Fast` is off, use the lightning button in the Pilot pill at the bottom-right of the Codex page to switch the current dialog between Fast and Standard. On a new-dialog page, enabling Fast before sending the first message makes that new dialog start in Fast from its first request. The cost detail popover also shows the active service tier and multiplier, so you can confirm the request actually used Fast.
+
+![CodexPilot Fast cost detail](docs/images/readme-fast-cost-detail.png)
+
 ### Dialog Sync
 
 After ccSwitch or another tool changes `model_provider` in `~/.codex/config.toml`, historical sessions may disappear or group incorrectly because their Provider metadata no longer matches. CodexPilot does not rewrite historical data automatically; in Dialog Maintenance, you can preview the impact first, then manually sync session ownership to the current config provider or a manually entered Provider.
@@ -63,6 +73,7 @@ After ccSwitch or another tool changes `model_provider` in `~/.codex/config.toml
 
 - Launch
 - Page enhancement switches
+- Global Fast and per-dialog Fast
 - Session export
 - Timeline
 - Dialog maintenance
