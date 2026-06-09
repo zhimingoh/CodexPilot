@@ -64,6 +64,10 @@ macOS 当前包未做 Apple Developer ID 签名和公证。如果系统提示无
 
 ![CodexPilot Fast 成本明细](docs/images/readme-fast-cost-detail.png)
 
+如果通过 sub2api 网关使用 CodexPilot，需要同时在 sub2api 的“系统设置” - “网关服务”里开启 OpenAI Fast/Flex 策略：把 `service_tier` 匹配设为 `priority（fast）`，处理方式设为“透传（保留 service_tier）”，这样 CodexPilot 写入的 Fast 参数才能继续传到 OpenAI 网关。
+
+![sub2api 网关服务 Fast/Flex 策略](docs/images/readme-sub2api-fast-gateway.png)
+
 ### 对话同步
 
 当 ccSwitch 或其他工具切换 `~/.codex/config.toml` 里的 `model_provider` 后，历史会话可能因为 Provider 元数据不一致而不可见或分组异常。CodexPilot 不会自动改写历史数据；你可以在“对话维护”里先预览影响范围，再手动把会话归属同步到当前配置或手动指定的 Provider。
