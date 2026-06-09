@@ -437,6 +437,123 @@ h2 {
   width: 36px;
 }
 
+.updateReminder {
+  position: relative;
+}
+
+.updateButton {
+  position: relative;
+}
+
+.updateButton.attention {
+  border-color: var(--warning-border);
+  color: var(--warning-text);
+}
+
+.attentionDot {
+  background: var(--danger-action-hover);
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  height: 10px;
+  position: absolute;
+  right: 7px;
+  top: 6px;
+  width: 10px;
+}
+
+.spinIcon {
+  animation: spin 900ms linear infinite;
+}
+
+.miniIconButton {
+  min-height: 28px;
+  width: 28px;
+}
+
+.updatePopover {
+  animation: popoverIn 120ms ease-out;
+  background: var(--popover-bg);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 16px 36px var(--shadow-dialog);
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 292px;
+  z-index: 900;
+}
+
+.updateCardTop {
+  align-items: center;
+  color: var(--app-muted);
+  display: flex;
+  font-size: 12px;
+  font-weight: 700;
+  justify-content: space-between;
+}
+
+.updateVersionRow {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+  justify-content: center;
+}
+
+.updateVersionRow strong {
+  color: var(--app-text-heading);
+  font-size: 25px;
+  line-height: 1.15;
+}
+
+.updateOkIcon {
+  color: var(--ok-dot);
+  display: inline-flex;
+}
+
+.updateFailIcon {
+  color: var(--warning-dot);
+  display: inline-flex;
+}
+
+.updateDetail,
+.updateReleaseName,
+.updateError {
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.updateDetail {
+  color: var(--app-muted);
+}
+
+.updateReleaseName {
+  color: var(--app-text-soft);
+  overflow-wrap: anywhere;
+}
+
+.updateError {
+  color: var(--warning-text);
+  overflow-wrap: anywhere;
+}
+
+.updateActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+.updateActions .secondary {
+  min-height: 28px;
+  white-space: nowrap;
+}
+
 .message {
   color: var(--app-muted-2);
   font-size: 12px;
@@ -516,6 +633,23 @@ h2 {
   }
 }
 
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 @keyframes progressSweep {
   0% {

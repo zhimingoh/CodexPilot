@@ -7,7 +7,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "check": "tsc --noEmit -p tsconfig.json && node ../../scripts/check-manager-theme-colors.mjs",
-    "test": "tsc src/autoLaunch.ts src/autoLaunch.test.ts --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir ../../target/manager-tests --skipLibCheck && node ../../target/manager-tests/autoLaunch.test.js",
+    "test": "tsc src/autoLaunch.ts src/autoLaunch.test.ts src/updateReminder.ts src/updateReminder.test.ts src/types.ts --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir ../../target/manager-tests --skipLibCheck && node ../../target/manager-tests/autoLaunch.test.js && node ../../target/manager-tests/updateReminder.test.js",
     "tauri": "tauri",
     "vite:dev": "vite --host 127.0.0.1 --port 1420",
     "preview:ui": "vite --host 127.0.0.1 --port 1420 --mode ui-preview",

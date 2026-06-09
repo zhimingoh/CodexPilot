@@ -32,6 +32,13 @@ pub(crate) struct EnhancementSettings {
     pub(crate) fast_global_mode: bool,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateSettings {
+    #[serde(default)]
+    pub(crate) ignored_update_tag: Option<String>,
+}
+
 impl Default for EnhancementSettings {
     fn default() -> Self {
         Self {
@@ -71,12 +78,59 @@ pub(crate) fn enhancement_settings_path() -> PathBuf {
     codex_pilot_core::app_paths::app_state_dir().join("enhancement-settings.json")
 }
 
+pub(crate) fn update_settings_path() -> PathBuf {
+    codex_pilot_core::app_paths::app_state_dir().join("manager-update.json")
+}
+
 pub(crate) fn load_launch_preferences() -> LaunchPreferences {
     load_launch_preferences_from_path(&manager_config_path()).unwrap_or_default()
 }
 
 pub(crate) fn load_enhancement_settings() -> EnhancementSettings {
     load_enhancement_settings_from_path(&enhancement_settings_path()).unwrap_or_default()
+}
+
+pub(crate) fn load_update_settings() -> UpdateSettings {
+    load_update_settings_from_path(&update_settings_path()).unwrap_or_default()
+}
+
+pub(crate) fn load_update_settings_from_path(path: &Path) -> Result<UpdateSettings, String> {
+    if !path.exists() {
+        return Ok(UpdateSettings::default());
+    }
+    let contents =
+        std::fs::read_to_string(path).map_err(|error| format!("读取更新提醒设置失败：{error}"))?;
+    let settings = serde_json::from_str::<UpdateSettings>(&contents)
+        .map_err(|error| format!("解析更新提醒设置失败：{error}"))?;
+    Ok(sanitize_update_settings(settings))
+}
+
+pub(crate) fn save_update_settings_to_path(
+    path: &Path,
+    settings: &UpdateSettings,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| format!("创建配置目录失败：{error}"))?;
+    }
+    let contents = serde_json::to_string_pretty(&sanitize_update_settings(settings.clone()))
+        .map_err(|error| format!("序列化更新提醒设置失败：{error}"))?;
+    std::fs::write(path, contents).map_err(|error| format!("写入更新提醒设置失败：{error}"))
+}
+
+pub(crate) fn save_update_settings(settings: &UpdateSettings) -> Result<(), String> {
+    save_update_settings_to_path(&update_settings_path(), settings)
+}
+
+pub(crate) fn sanitize_update_settings(mut settings: UpdateSettings) -> UpdateSettings {
+    settings.ignored_update_tag = settings.ignored_update_tag.and_then(|tag| {
+        let trimmed = tag.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+    settings
 }
 
 pub(crate) fn load_enhancement_settings_from_path(

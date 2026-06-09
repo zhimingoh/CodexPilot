@@ -26,6 +26,19 @@ export type Theme = "light" | "dark";
 
 export const THEME_STORAGE_KEY = "codex-pilot-theme";
 
+export type UpdateStatus = "checking" | "latest" | "available" | "ignored" | "failed";
+
+export type UpdateSnapshot = {
+  currentVersion: string;
+  latestVersion: string | null;
+  latestTag: string | null;
+  releaseUrl: string | null;
+  releaseName: string | null;
+  publishedAt: string | null;
+  status: UpdateStatus;
+  error: string | null;
+};
+
 export type ProviderCount = {
   provider: string;
   count: number;

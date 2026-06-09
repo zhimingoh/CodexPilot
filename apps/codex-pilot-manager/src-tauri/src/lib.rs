@@ -173,7 +173,10 @@ pub fn run() {
             commands::sessions::inspect_session_zip,
             commands::sessions::import_session_zip,
             commands::diagnostics::diagnostics_snapshot,
-            commands::diagnostics::collect_diagnostics
+            commands::diagnostics::collect_diagnostics,
+            commands::update::check_latest_release,
+            commands::update::ignore_latest_release,
+            commands::update::open_release_url
         ])
         .build(tauri::generate_context!())
         .expect("error while building CodexPilot Manager");
@@ -314,6 +317,35 @@ mod tests {
         let loaded = load_enhancement_settings_from_path(&path).unwrap();
 
         assert_eq!(loaded, settings);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn update_settings_round_trip_trims_empty_tags() {
+        let root = unique_temp_dir("update-settings");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("manager-update.json");
+
+        save_update_settings_to_path(
+            &path,
+            &UpdateSettings {
+                ignored_update_tag: Some("  v1.3.3  ".to_string()),
+            },
+        )
+        .unwrap();
+        let loaded = load_update_settings_from_path(&path).unwrap();
+        assert_eq!(loaded.ignored_update_tag.as_deref(), Some("v1.3.3"));
+
+        save_update_settings_to_path(
+            &path,
+            &UpdateSettings {
+                ignored_update_tag: Some("  ".to_string()),
+            },
+        )
+        .unwrap();
+        let loaded = load_update_settings_from_path(&path).unwrap();
+        assert_eq!(loaded.ignored_update_tag, None);
+
         std::fs::remove_dir_all(root).unwrap();
     }
 

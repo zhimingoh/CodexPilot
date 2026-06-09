@@ -1,0 +1,79 @@
+name: Update release feed
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v1.3.2"
+        required: true
+        type: string
+      published_at:
+        description: "Optional ISO-8601 published time. Defaults to the current UTC time."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  update-release-feed:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'release' || github.event.release.prerelease == false }}
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update latest release feed
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          REPOSITORY: ${{ github.repository }}
+          PUBLISHED_AT: ${{ github.event.release.published_at || inputs.published_at }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          version="${version#V}"
+          release_name="$RELEASE_NAME"
+          if [ -z "$release_name" ]; then
+            release_name="CodexPilot $RELEASE_TAG"
+          fi
+          release_url="$RELEASE_URL"
+          if [ -z "$release_url" ]; then
+            release_url="https://github.com/$REPOSITORY/releases/tag/$RELEASE_TAG"
+          fi
+          published_at="$PUBLISHED_AT"
+          if [ -z "$published_at" ]; then
+            published_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          fi
+
+          mkdir -p docs/update
+          jq -n \
+            --arg latestTag "$RELEASE_TAG" \
+            --arg latestVersion "$version" \
+            --arg releaseUrl "$release_url" \
+            --arg releaseName "$release_name" \
+            --arg publishedAt "$published_at" \
+            '{
+              latestTag: $latestTag,
+              latestVersion: $latestVersion,
+              releaseUrl: $releaseUrl,
+              releaseName: $releaseName,
+              publishedAt: $publishedAt
+            }' > docs/update/latest.json
+
+      - name: Commit release feed
+        run: |
+          if git diff --quiet -- docs/update/latest.json; then
+            echo "Release feed is already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/update/latest.json
+          git commit -m "docs: update release feed"
+          git push

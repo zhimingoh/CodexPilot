@@ -17,6 +17,7 @@ import {
 import { ProgressDialog, canRunLaunchAction, loadInitialTheme } from "./appSupport";
 import { callBackend, isUiPreviewMode } from "./backend";
 import { resolveAutoLaunchAction } from "./autoLaunch";
+import { UpdateReminderButton } from "./UpdateReminderButton";
 import { DiagnosticsView } from "./views/DiagnosticsView";
 import { LaunchView } from "./views/LaunchView";
 import { OverviewView } from "./views/OverviewView";
@@ -28,6 +29,7 @@ import {
   type RecycleBinSnapshot,
   THEME_STORAGE_KEY,
   type Theme,
+  type UpdateSnapshot,
   type ViewId,
 } from "./types";
 import "./styles.css";
@@ -47,6 +49,8 @@ function App() {
   const [launch, setLaunch] = React.useState<LaunchSnapshot | null>(null);
   const [recycleBin, setRecycleBin] = React.useState<RecycleBinSnapshot | null>(null);
   const [diagnostics, setDiagnostics] = React.useState<DiagnosticsSnapshot | null>(null);
+  const [updateSnapshot, setUpdateSnapshot] = React.useState<UpdateSnapshot | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = React.useState(false);
   const [message, setMessage] = React.useState("就绪");
   const [toast, setToast] = React.useState("");
   const [progressMessage, setProgressMessage] = React.useState("");
@@ -175,6 +179,87 @@ function App() {
       .then(setAppVersion)
       .catch(() => setAppVersion(null));
   }, []);
+
+  const checkForUpdates = React.useCallback((announce = false) => {
+    setCheckingUpdate(true);
+    setUpdateSnapshot((current) =>
+      current
+        ? {
+            ...current,
+            status: "checking",
+            error: null,
+          }
+        : current,
+    );
+    if (announce) notify("正在检查更新");
+    callBackend<UpdateSnapshot>("check_latest_release")
+      .then((snapshot) => {
+        setUpdateSnapshot(snapshot);
+        if (!announce) return;
+        if (snapshot.status === "available" && snapshot.latestVersion) {
+          notify(`发现新版本 v${snapshot.latestVersion}`);
+        } else if (snapshot.status === "latest") {
+          notify("已是最新版本");
+        } else if (snapshot.status === "ignored") {
+          notify("已忽略此版本提醒");
+        } else if (snapshot.status === "failed") {
+          notify("暂时无法检查更新");
+        }
+      })
+      .catch(() => {
+        setUpdateSnapshot((current) => ({
+          currentVersion: current?.currentVersion ?? "未知",
+          latestVersion: current?.latestVersion ?? null,
+          latestTag: current?.latestTag ?? null,
+          releaseUrl: current?.releaseUrl ?? null,
+          releaseName: current?.releaseName ?? null,
+          publishedAt: current?.publishedAt ?? null,
+          status: "failed",
+          error: "暂时无法检查更新",
+        }));
+        if (announce) notify("暂时无法检查更新");
+      })
+      .finally(() => setCheckingUpdate(false));
+  }, [notify]);
+
+  React.useEffect(() => {
+    checkForUpdates(false);
+  }, [checkForUpdates]);
+
+  React.useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    listen<UpdateSnapshot>("update_state_changed", (event) => {
+      setUpdateSnapshot(event.payload);
+      setCheckingUpdate(false);
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
+  const handleIgnoreUpdate = React.useCallback((tag: string) => {
+    setCheckingUpdate(true);
+    callBackend<UpdateSnapshot>("ignore_latest_release", { tag })
+      .then((snapshot) => {
+        setUpdateSnapshot(snapshot);
+        notify("已忽略此版本提醒");
+      })
+      .catch((error) => notify(String(error)))
+      .finally(() => setCheckingUpdate(false));
+  }, [notify]);
+
+  const handleOpenRelease = React.useCallback((url: string) => {
+    callBackend<string>("open_release_url", { url })
+      .then((message) => notify(message))
+      .catch((error) => notify(String(error)));
+  }, [notify]);
 
   React.useEffect(() => {
     if (!launch) return;
@@ -324,6 +409,14 @@ function App() {
             <button className="secondary iconButton" onClick={() => refresh()} title="刷新" type="button">
               <RefreshCw size={16} />
             </button>
+            <UpdateReminderButton
+              appVersion={appVersion}
+              snapshot={updateSnapshot}
+              checking={checkingUpdate}
+              onCheck={() => checkForUpdates(true)}
+              onIgnore={handleIgnoreUpdate}
+              onOpenRelease={handleOpenRelease}
+            />
             <button className="primary" disabled={launching || !canRunLaunchAction(launch)} onClick={handleLaunch} type="button">
               {launch?.actionKind === "running" ? (
                 <CheckCircle2 size={16} />
