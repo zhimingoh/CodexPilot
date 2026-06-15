@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use crate::relay_config::OfficialConfigSnapshot;
 use crate::relay_config_auth::auth_json_chatgpt_account_label;
 use crate::relay_config_toml::{
-    backup_existing_config, clear_api_key_auth_json, write_pure_api_auth_json,
-    upsert_relay_provider_config, upsert_api_provider_config,
+    backup_existing_config, clear_api_key_auth_json, upsert_api_provider_config,
+    upsert_relay_provider_config, write_pure_api_auth_json,
 };
 
 use crate::protocol_proxy::{self, UpstreamProtocol};
@@ -170,8 +170,8 @@ impl ProviderTxn {
     fn read_official_snapshot(&self) -> anyhow::Result<OfficialConfigSnapshot> {
         match &self.profiles_json {
             FileSnapshot::Exists(data) => {
-                let v: serde_json::Value = serde_json::from_slice(data)
-                    .context("无法解析 provider-profiles.json")?;
+                let v: serde_json::Value =
+                    serde_json::from_slice(data).context("无法解析 provider-profiles.json")?;
                 let toml_str = v
                     .get("officialConfigSnapshot")
                     .and_then(|s| s.get("configToml"))
@@ -198,8 +198,7 @@ impl ProviderTxn {
         if snapshot.config_toml.is_empty() {
             std::fs::write(&config_path, "").context("恢复空 config.toml")?;
         } else {
-            std::fs::write(&config_path, &snapshot.config_toml)
-                .context("恢复官方 config.toml")?;
+            std::fs::write(&config_path, &snapshot.config_toml).context("恢复官方 config.toml")?;
         }
 
         // 清除 auth.json 中的 OPENAI_API_KEY（保留 ChatGPT tokens）
@@ -300,12 +299,8 @@ impl ProviderTxn {
             upstream_protocol,
             protocol_proxy::DEFAULT_PROTOCOL_PROXY_PORT,
         );
-        let updated = upsert_api_provider_config(
-            &existing,
-            &codex_base_url,
-            api_key,
-            upstream_protocol,
-        );
+        let updated =
+            upsert_api_provider_config(&existing, &codex_base_url, api_key, upstream_protocol);
         std::fs::write(&config_path, updated)
             .with_context(|| format!("写入 API config.toml 失败: {}", config_path.display()))?;
 
@@ -372,9 +367,8 @@ pub struct ProviderModeReading {
 pub fn read_current_mode() -> anyhow::Result<ProviderModeReading> {
     let config_path = crate::app_paths::codex_config_path();
     if !config_path.exists() {
-        let chatgpt_auth = auth_json_chatgpt_account_label(
-            &crate::app_paths::codex_home_dir().join("auth.json"),
-        );
+        let chatgpt_auth =
+            auth_json_chatgpt_account_label(&crate::app_paths::codex_home_dir().join("auth.json"));
         return Ok(ProviderModeReading {
             mode: if chatgpt_auth.is_some() {
                 Some(ProviderMode::Official)
@@ -390,15 +384,17 @@ pub fn read_current_mode() -> anyhow::Result<ProviderModeReading> {
     for line in contents.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("codex_pilot_channel_mode") {
-            sentinel = trimmed.split('=').nth(1).map(|v| v.trim().trim_matches('"'));
+            sentinel = trimmed
+                .split('=')
+                .nth(1)
+                .map(|v| v.trim().trim_matches('"'));
             break;
         }
     }
 
     let has_custom_provider = contents.contains("model_provider");
-    let chatgpt_auth = auth_json_chatgpt_account_label(
-        &crate::app_paths::codex_home_dir().join("auth.json"),
-    );
+    let chatgpt_auth =
+        auth_json_chatgpt_account_label(&crate::app_paths::codex_home_dir().join("auth.json"));
 
     match sentinel {
         Some("hybrid") => Ok(ProviderModeReading {
@@ -599,7 +595,11 @@ mod tests {
         std::fs::create_dir_all(&state).unwrap();
         // No auth.json → no ChatGPT login
         std::fs::write(home.join("config.toml"), "model = \"gpt-5\"\n").unwrap();
-        std::fs::write(state.join("provider-profiles.json"), relay_profile_json().as_bytes()).unwrap();
+        std::fs::write(
+            state.join("provider-profiles.json"),
+            relay_profile_json().as_bytes(),
+        )
+        .unwrap();
         set_test_dirs(&home, &state);
 
         let txn = ProviderTxn::begin().unwrap();
@@ -644,13 +644,25 @@ mod tests {
 
         // Verify config.toml has sentinel "hybrid"
         let config = std::fs::read_to_string(home.join("config.toml")).unwrap();
-        assert!(config.contains("codex_pilot_channel_mode = \"hybrid\""), "config missing hybrid sentinel: {config}");
-        assert!(config.contains("model_provider = \"CodexPilot\""), "config missing CodexPilot provider");
+        assert!(
+            config.contains("codex_pilot_channel_mode = \"hybrid\""),
+            "config missing hybrid sentinel: {config}"
+        );
+        assert!(
+            config.contains("model_provider = \"CodexPilot\""),
+            "config missing CodexPilot provider"
+        );
 
         // Verify auth.json still has ChatGPT tokens (not overwritten)
         let auth = std::fs::read_to_string(home.join("auth.json")).unwrap();
-        assert!(auth.contains("chatgpt"), "auth.json should still have chatgpt: {auth}");
-        assert!(!auth.contains("OPENAI_API_KEY"), "auth.json should NOT have OPENAI_API_KEY in hybrid mode");
+        assert!(
+            auth.contains("chatgpt"),
+            "auth.json should still have chatgpt: {auth}"
+        );
+        assert!(
+            !auth.contains("OPENAI_API_KEY"),
+            "auth.json should NOT have OPENAI_API_KEY in hybrid mode"
+        );
 
         clear_test_dirs();
         let _ = std::fs::remove_dir_all(&home);
@@ -681,12 +693,18 @@ mod tests {
 
         // Verify auth.json has OPENAI_API_KEY
         let auth = std::fs::read_to_string(home.join("auth.json")).unwrap();
-        assert!(auth.contains("OPENAI_API_KEY"), "auth.json missing API key: {auth}");
+        assert!(
+            auth.contains("OPENAI_API_KEY"),
+            "auth.json missing API key: {auth}"
+        );
         assert!(auth.contains("sk-api"));
 
         // Verify config.toml has sentinel "api"
         let config = std::fs::read_to_string(home.join("config.toml")).unwrap();
-        assert!(config.contains("codex_pilot_channel_mode = \"api\""), "config missing api sentinel: {config}");
+        assert!(
+            config.contains("codex_pilot_channel_mode = \"api\""),
+            "config missing api sentinel: {config}"
+        );
 
         clear_test_dirs();
         let _ = std::fs::remove_dir_all(&home);
@@ -726,12 +744,21 @@ mod tests {
 
         // Verify config.toml restored
         let config = std::fs::read_to_string(home.join("config.toml")).unwrap();
-        assert!(config.contains("model_provider = \"chatgpt\""), "config should be restored: {config}");
-        assert!(!config.contains("codex_pilot_channel_mode"), "sentinel should be gone: {config}");
+        assert!(
+            config.contains("model_provider = \"chatgpt\""),
+            "config should be restored: {config}"
+        );
+        assert!(
+            !config.contains("codex_pilot_channel_mode"),
+            "sentinel should be gone: {config}"
+        );
 
         // Verify auth.json has no OPENAI_API_KEY
         let auth = std::fs::read_to_string(home.join("auth.json")).unwrap();
-        assert!(!auth.contains("OPENAI_API_KEY"), "API key should be cleared: {auth}");
+        assert!(
+            !auth.contains("OPENAI_API_KEY"),
+            "API key should be cleared: {auth}"
+        );
 
         clear_test_dirs();
         let _ = std::fs::remove_dir_all(&home);
@@ -754,7 +781,10 @@ mod tests {
 
         let reading = read_current_mode().unwrap();
         assert!(reading.external_provider, "should detect external provider");
-        assert!(!reading.owned_by_codex_pilot, "should not be owned by CodexPilot");
+        assert!(
+            !reading.owned_by_codex_pilot,
+            "should not be owned by CodexPilot"
+        );
         assert_eq!(reading.mode, Some(ProviderMode::Api));
 
         clear_test_dirs();
@@ -777,7 +807,10 @@ mod tests {
         set_test_dirs(&home, &state);
 
         let reading = read_current_mode().unwrap();
-        assert!(reading.owned_by_codex_pilot, "should be owned by CodexPilot");
+        assert!(
+            reading.owned_by_codex_pilot,
+            "should be owned by CodexPilot"
+        );
         assert!(!reading.external_provider);
         assert_eq!(reading.mode, Some(ProviderMode::Hybrid));
 
@@ -785,5 +818,4 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&state);
     }
-
 }

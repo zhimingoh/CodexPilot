@@ -67,143 +67,22 @@ async fn handle_connection(mut stream: tokio::net::TcpStream) -> anyhow::Result<
         return Ok(());
     }
 
-    let (status, content_type, body) =
-        if path == "/backend/status" && matches!(method, "GET" | "POST") {
-            (
-                "200 OK".to_string(),
-                "application/json; charset=utf-8".to_string(),
-                serde_json::to_vec(&json!({
-                    "status": "ok",
-                    "message": "CodexPilot 后端已连接",
-                    "version": crate::version::VERSION,
-                    "transport": "http-helper"
-                }))?,
-            )
-        } else if let Some(route) = helper_proxy_route(method, path, request_body) {
-            // 仅中转态(hybrid)才激活协议代理；其他态不碰模型流量
-            if !is_hybrid_channel_mode().unwrap_or(false) {
-                (
-                    "404 Not Found".to_string(),
-                    "application/json; charset=utf-8".to_string(),
-                    serde_json::to_vec(&json!({
-                        "status": "failed",
-                        "message": "未知后端路径"
-                    }))?,
-                )
-            } else {
-                let target = match load_active_proxy_target() {
-                    Ok(Some(target)) => target,
-                    Ok(None) => {
-                        write_json_response(
-                            &mut stream,
-                            "502 Bad Gateway",
-                            &json!({
-                                "status": "failed",
-                                "message": "当前激活配置未启用本地协议代理。"
-                            }),
-                        )
-                        .await?;
-                        stream.shutdown().await?;
-                        return Ok(());
-                    }
-                    Err(error) => {
-                        write_json_response(
-                            &mut stream,
-                            "502 Bad Gateway",
-                            &json!({
-                                "status": "failed",
-                                "message": error.to_string()
-                            }),
-                        )
-                        .await?;
-                        stream.shutdown().await?;
-                        return Ok(());
-                    }
-                };
-                let upstream_protocol = target.protocol;
-                if matches!(route, HelperProxyRoute::Responses { stream: true })
-                    && upstream_protocol
-                        == crate::protocol_proxy::UpstreamProtocol::ChatCompletions
-                {
-                    if let Err(error) =
-                        crate::protocol_proxy::stream_chat_completions_as_responses(
-                            &mut stream,
-                            &target,
-                            request_body,
-                        )
-                        .await
-                    {
-                        write_json_response(
-                            &mut stream,
-                            "502 Bad Gateway",
-                            &json!({
-                                "status": "failed",
-                                "message": error.to_string()
-                            }),
-                        )
-                        .await?;
-                    }
-                    return Ok(());
-                }
-                if matches!(route, HelperProxyRoute::Responses { stream: true })
-                    && upstream_protocol
-                        == crate::protocol_proxy::UpstreamProtocol::AnthropicMessages
-                {
-                    if let Err(error) =
-                        crate::protocol_proxy::stream_anthropic_messages_as_responses(
-                            &mut stream,
-                            &target,
-                            request_body,
-                        )
-                        .await
-                    {
-                        write_json_response(
-                            &mut stream,
-                            "502 Bad Gateway",
-                            &json!({
-                                "status": "failed",
-                                "message": error.to_string()
-                            }),
-                        )
-                        .await?;
-                    }
-                    return Ok(());
-                }
-                match route {
-                    HelperProxyRoute::Responses { .. } => {
-                        match crate::protocol_proxy::handle_responses_proxy_request(
-                            &target,
-                            request_body,
-                        )
-                        .await
-                        {
-                            Ok(result) => (result.status, result.content_type, result.body),
-                            Err(error) => (
-                                "502 Bad Gateway".to_string(),
-                                "application/json; charset=utf-8".to_string(),
-                                serde_json::to_vec(&json!({
-                                    "status": "failed",
-                                    "message": error.to_string()
-                                }))?,
-                            ),
-                        }
-                    }
-                    HelperProxyRoute::Models => {
-                        match crate::protocol_proxy::handle_models_proxy_request(&target).await {
-                            Ok(result) => (result.status, result.content_type, result.body),
-                            Err(error) => (
-                                "502 Bad Gateway".to_string(),
-                                "application/json; charset=utf-8".to_string(),
-                                serde_json::to_vec(&json!({
-                                    "status": "failed",
-                                    "message": error.to_string()
-                                }))?,
-                            ),
-                        }
-                    }
-                }
-            }
-        } else {
+    let (status, content_type, body) = if path == "/backend/status"
+        && matches!(method, "GET" | "POST")
+    {
+        (
+            "200 OK".to_string(),
+            "application/json; charset=utf-8".to_string(),
+            serde_json::to_vec(&json!({
+                "status": "ok",
+                "message": "CodexPilot 后端已连接",
+                "version": crate::version::VERSION,
+                "transport": "http-helper"
+            }))?,
+        )
+    } else if let Some(route) = helper_proxy_route(method, path, request_body) {
+        // 仅中转态(hybrid)才激活协议代理；其他态不碰模型流量
+        if !is_hybrid_channel_mode().unwrap_or(false) {
             (
                 "404 Not Found".to_string(),
                 "application/json; charset=utf-8".to_string(),
@@ -212,7 +91,125 @@ async fn handle_connection(mut stream: tokio::net::TcpStream) -> anyhow::Result<
                     "message": "未知后端路径"
                 }))?,
             )
-        };
+        } else {
+            let target = match load_active_proxy_target() {
+                Ok(Some(target)) => target,
+                Ok(None) => {
+                    write_json_response(
+                        &mut stream,
+                        "502 Bad Gateway",
+                        &json!({
+                            "status": "failed",
+                            "message": "当前激活配置未启用本地协议代理。"
+                        }),
+                    )
+                    .await?;
+                    stream.shutdown().await?;
+                    return Ok(());
+                }
+                Err(error) => {
+                    write_json_response(
+                        &mut stream,
+                        "502 Bad Gateway",
+                        &json!({
+                            "status": "failed",
+                            "message": error.to_string()
+                        }),
+                    )
+                    .await?;
+                    stream.shutdown().await?;
+                    return Ok(());
+                }
+            };
+            let upstream_protocol = target.protocol;
+            if matches!(route, HelperProxyRoute::Responses { stream: true })
+                && upstream_protocol == crate::protocol_proxy::UpstreamProtocol::ChatCompletions
+            {
+                if let Err(error) = crate::protocol_proxy::stream_chat_completions_as_responses(
+                    &mut stream,
+                    &target,
+                    request_body,
+                )
+                .await
+                {
+                    write_json_response(
+                        &mut stream,
+                        "502 Bad Gateway",
+                        &json!({
+                            "status": "failed",
+                            "message": error.to_string()
+                        }),
+                    )
+                    .await?;
+                }
+                return Ok(());
+            }
+            if matches!(route, HelperProxyRoute::Responses { stream: true })
+                && upstream_protocol == crate::protocol_proxy::UpstreamProtocol::AnthropicMessages
+            {
+                if let Err(error) = crate::protocol_proxy::stream_anthropic_messages_as_responses(
+                    &mut stream,
+                    &target,
+                    request_body,
+                )
+                .await
+                {
+                    write_json_response(
+                        &mut stream,
+                        "502 Bad Gateway",
+                        &json!({
+                            "status": "failed",
+                            "message": error.to_string()
+                        }),
+                    )
+                    .await?;
+                }
+                return Ok(());
+            }
+            match route {
+                HelperProxyRoute::Responses { .. } => {
+                    match crate::protocol_proxy::handle_responses_proxy_request(
+                        &target,
+                        request_body,
+                    )
+                    .await
+                    {
+                        Ok(result) => (result.status, result.content_type, result.body),
+                        Err(error) => (
+                            "502 Bad Gateway".to_string(),
+                            "application/json; charset=utf-8".to_string(),
+                            serde_json::to_vec(&json!({
+                                "status": "failed",
+                                "message": error.to_string()
+                            }))?,
+                        ),
+                    }
+                }
+                HelperProxyRoute::Models => {
+                    match crate::protocol_proxy::handle_models_proxy_request(&target).await {
+                        Ok(result) => (result.status, result.content_type, result.body),
+                        Err(error) => (
+                            "502 Bad Gateway".to_string(),
+                            "application/json; charset=utf-8".to_string(),
+                            serde_json::to_vec(&json!({
+                                "status": "failed",
+                                "message": error.to_string()
+                            }))?,
+                        ),
+                    }
+                }
+            }
+        }
+    } else {
+        (
+            "404 Not Found".to_string(),
+            "application/json; charset=utf-8".to_string(),
+            serde_json::to_vec(&json!({
+                "status": "failed",
+                "message": "未知后端路径"
+            }))?,
+        )
+    };
 
     let response = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",

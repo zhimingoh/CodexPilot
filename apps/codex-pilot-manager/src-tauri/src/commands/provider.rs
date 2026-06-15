@@ -1,6 +1,6 @@
 use super::super::*;
-use codex_pilot_core::provider_txn::{self, ProviderMode, ProviderTxn};
 use codex_pilot_core::protocol_proxy::UpstreamProtocol;
+use codex_pilot_core::provider_txn::{self, ProviderMode, ProviderTxn};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -195,29 +195,30 @@ pub(crate) async fn switch_provider_mode(
         };
 
         // 如果是 hybrid 或 api 且未传 base_url/api_key，从 profile 取
-        let (base_url, api_key, protocol) = if matches!(mode, ProviderMode::Hybrid | ProviderMode::Api) {
-            if !request.profile_id.is_empty() {
-                let store = load_provider_profiles();
-                let profile = store
-                    .profiles
-                    .iter()
-                    .find(|p| p.id == request.profile_id)
-                    .ok_or_else(|| format!("未找到 profile：{}", request.profile_id))?;
-                (
-                    profile.base_url.clone(),
-                    profile.bearer_token.clone(),
-                    parse_upstream_protocol(&profile.upstream_protocol),
-                )
+        let (base_url, api_key, protocol) =
+            if matches!(mode, ProviderMode::Hybrid | ProviderMode::Api) {
+                if !request.profile_id.is_empty() {
+                    let store = load_provider_profiles();
+                    let profile = store
+                        .profiles
+                        .iter()
+                        .find(|p| p.id == request.profile_id)
+                        .ok_or_else(|| format!("未找到 profile：{}", request.profile_id))?;
+                    (
+                        profile.base_url.clone(),
+                        profile.bearer_token.clone(),
+                        parse_upstream_protocol(&profile.upstream_protocol),
+                    )
+                } else {
+                    (
+                        request.base_url.clone(),
+                        request.api_key.clone(),
+                        parse_upstream_protocol(&request.upstream_protocol),
+                    )
+                }
             } else {
-                (
-                    request.base_url.clone(),
-                    request.api_key.clone(),
-                    parse_upstream_protocol(&request.upstream_protocol),
-                )
-            }
-        } else {
-            (String::new(), String::new(), UpstreamProtocol::Responses)
-        };
+                (String::new(), String::new(), UpstreamProtocol::Responses)
+            };
 
         let txn = ProviderTxn::begin().map_err(|e| e.to_string())?;
         let _result = match mode {
