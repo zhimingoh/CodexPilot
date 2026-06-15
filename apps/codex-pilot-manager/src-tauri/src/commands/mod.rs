@@ -5,3 +5,4 @@ pub(crate) mod launch_helpers;
 pub(crate) mod session_sync;
 pub(crate) mod sessions;
 pub(crate) mod update;
+pub(crate) mod provider;

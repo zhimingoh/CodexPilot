@@ -176,7 +176,12 @@ pub fn run() {
             commands::diagnostics::collect_diagnostics,
             commands::update::check_latest_release,
             commands::update::ignore_latest_release,
-            commands::update::open_release_url
+            commands::update::open_release_url,
+            commands::provider::provider_snapshot,
+            commands::provider::switch_provider_mode,
+            commands::provider::save_provider_profile,
+            commands::provider::activate_provider_profile,
+            commands::provider::delete_provider_profile
         ])
         .build(tauri::generate_context!())
         .expect("error while building CodexPilot Manager");
