@@ -46,7 +46,7 @@ pub(crate) fn upsert_relay_provider_config(
         "wire_api = \"responses\"".to_string(),
         "requires_openai_auth = true".to_string(),
         format!("base_url = \"{}\"", toml_escape(base_url)),
-        format!("{CHANNEL_MODE_KEY} = \"hybridApi\""),
+        format!("{CHANNEL_MODE_KEY} = \"hybrid\""),
         format!(
             "codex_pilot_upstream_protocol = \"{}\"",
             upstream_protocol.as_config_value()

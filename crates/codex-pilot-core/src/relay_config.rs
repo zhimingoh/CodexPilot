@@ -431,10 +431,10 @@ pub(crate) fn relay_provider_config_from_contents(
         .unwrap_or_default();
     let mode = if active && stored_mode.as_deref() == Some("api") {
         "api"
-    } else if active && stored_mode.as_deref() == Some("hybridApi") {
-        "hybridApi"
+    } else if active && stored_mode.as_deref() == Some("hybrid") {
+        "hybrid"
     } else if active && requires_openai_auth {
-        "hybridApi"
+        "hybrid"
     } else if active && base_url.is_some() && has_bearer_token {
         "api"
     } else {

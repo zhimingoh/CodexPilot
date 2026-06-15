@@ -6,7 +6,18 @@ use std::sync::{Mutex, OnceLock};
 #[cfg(test)]
 static TEST_APP_STATE_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 
+#[cfg(test)]
+static TEST_CODEX_HOME_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
 pub fn codex_home_dir() -> PathBuf {
+    #[cfg(test)]
+    if let Some(path) = TEST_CODEX_HOME_DIR
+        .get()
+        .and_then(|slot| slot.lock().ok().and_then(|value| value.clone()))
+    {
+        return path;
+    }
+
     directories::BaseDirs::new()
         .map(|dirs| dirs.home_dir().join(".codex"))
         .unwrap_or_else(|| PathBuf::from(".codex"))
@@ -49,6 +60,14 @@ pub fn app_state_dir() -> PathBuf {
 #[cfg(test)]
 pub fn set_test_app_state_dir(path: Option<PathBuf>) {
     let slot = TEST_APP_STATE_DIR.get_or_init(|| Mutex::new(None));
+    if let Ok(mut value) = slot.lock() {
+        *value = path;
+    }
+}
+
+#[cfg(test)]
+pub fn set_test_codex_home_dir(path: Option<PathBuf>) {
+    let slot = TEST_CODEX_HOME_DIR.get_or_init(|| Mutex::new(None));
     if let Ok(mut value) = slot.lock() {
         *value = path;
     }

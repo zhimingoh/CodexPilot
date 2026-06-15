@@ -39,7 +39,7 @@ experimental_bearer_token = "sk-test"
 
     assert!(status.active);
     assert!(status.configured);
-    assert_eq!(status.mode, "hybridApi");
+    assert_eq!(status.mode, "hybrid");
     assert!(status.authenticated);
     assert_eq!(status.account_label.as_deref(), Some("user@example.com"));
     assert!(status.requires_openai_auth);

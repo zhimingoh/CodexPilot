@@ -24,6 +24,7 @@ pub mod protocol_proxy_transport;
 pub mod relay_config;
 pub(crate) mod relay_config_auth;
 pub(crate) mod relay_config_toml;
+pub mod provider_txn;
 pub mod routes;
 pub mod routes_sessions;
 pub mod status;
