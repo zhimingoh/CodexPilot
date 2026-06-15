@@ -148,4 +148,23 @@ export type EnhancementSettings = {
   fastGlobalMode: boolean;
 };
 
-export type ViewId = "overview" | "launch" | "sessions" | "diagnostics";
+export type ViewId = "overview" | "launch" | "sessions" | "diagnostics" | "provider";
+
+export type ProviderProfile = {
+  id: string;
+  name: string;
+  baseUrl: string;
+  bearerToken: string;
+  upstreamProtocol: string;
+};
+
+export type ProviderSnapshot = {
+  mode: string | null;
+  ownedByCodexPilot: boolean;
+  externalProvider: boolean;
+  chatgptAuthenticated: boolean;
+  chatgptAccountLabel: string | null;
+  officialSnapshotAvailable: boolean;
+  profiles: ProviderProfile[];
+  activeProfileId: string;
+};

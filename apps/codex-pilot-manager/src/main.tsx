@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   History,
   Moon,
+  Network,
   Play,
   RefreshCw,
   Stethoscope,
@@ -19,6 +20,7 @@ import { callBackend, isUiPreviewMode } from "./backend";
 import { resolveAutoLaunchAction } from "./autoLaunch";
 import { UpdateReminderButton } from "./UpdateReminderButton";
 import { DiagnosticsView } from "./views/DiagnosticsView";
+import { ProviderView } from "./views/ProviderView";
 import { LaunchView } from "./views/LaunchView";
 import { OverviewView } from "./views/OverviewView";
 import { RecycleBinView } from "./views/RecycleBinView";
@@ -30,6 +32,7 @@ import {
   THEME_STORAGE_KEY,
   type Theme,
   type UpdateSnapshot,
+  type ProviderSnapshot,
   type ViewId,
 } from "./types";
 import "./styles.css";
@@ -39,6 +42,7 @@ const views: Array<{ id: ViewId; label: string; icon: React.ElementType }> = [
   { id: "launch", label: "启动与注入", icon: Terminal },
   { id: "sessions", label: "对话维护", icon: History },
   { id: "diagnostics", label: "诊断", icon: Stethoscope },
+  { id: "provider", label: "模型通道", icon: Network },
 ];
 
 function App() {
@@ -50,6 +54,7 @@ function App() {
   const [recycleBin, setRecycleBin] = React.useState<RecycleBinSnapshot | null>(null);
   const [diagnostics, setDiagnostics] = React.useState<DiagnosticsSnapshot | null>(null);
   const [updateSnapshot, setUpdateSnapshot] = React.useState<UpdateSnapshot | null>(null);
+  const [provider, setProvider] = React.useState<ProviderSnapshot | null>(null);
   const [checkingUpdate, setCheckingUpdate] = React.useState(false);
   const [message, setMessage] = React.useState("就绪");
   const [toast, setToast] = React.useState("");
@@ -96,6 +101,9 @@ function App() {
       callBackend<DiagnosticsSnapshot>("diagnostics_snapshot")
         .then(setDiagnostics)
         .catch(() => setDiagnostics(null)),
+      callBackend<ProviderSnapshot>("provider_snapshot")
+        .then(setProvider)
+        .catch(() => setProvider(null)),
     ]).finally(() => {
       if (!silent) notify("已更新");
     });
@@ -443,6 +451,7 @@ function App() {
             launch={launch}
             recycleBin={recycleBin}
             diagnostics={diagnostics}
+            provider={provider}
             onNavigate={setActiveView}
           />
         )}
@@ -458,6 +467,14 @@ function App() {
         {activeView === "diagnostics" && (
           <DiagnosticsView
             diagnostics={diagnostics}
+            onRefresh={refresh}
+            onMessage={notify}
+            onProgress={setProgressMessage}
+          />
+        )}
+        {activeView === "provider" && (
+          <ProviderView
+            provider={provider}
             onRefresh={refresh}
             onMessage={notify}
             onProgress={setProgressMessage}

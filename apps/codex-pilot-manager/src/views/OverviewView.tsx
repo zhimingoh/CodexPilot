@@ -1,10 +1,11 @@
 import * as React from "react";
-import { Activity, Stethoscope, Terminal, Trash2 } from "lucide-react";
+import { Network, Stethoscope, Terminal, Trash2 } from "lucide-react";
 import { Metric } from "../components/primitives";
 import type {
   BackendStatus,
   DiagnosticsSnapshot,
   LaunchSnapshot,
+  ProviderSnapshot,
   RecycleBinSnapshot,
   ViewId,
 } from "../types";
@@ -12,6 +13,17 @@ import type {
 function canRunLaunchAction(launch: LaunchSnapshot | null): boolean {
   if (!launch) return false;
   return ["launch", "reinject", "restart", "running"].includes(launch.actionKind);
+}
+
+function providerModeLabel(provider: ProviderSnapshot | null): string {
+  if (!provider) return "检查中";
+  if (provider.externalProvider) return "纯API态（外部管理）";
+  const mode = provider.mode;
+  if (mode === "hybrid") return "中转态";
+  if (mode === "api") return "纯API态";
+  if (mode === "official") return "登录态";
+  if (provider.chatgptAuthenticated) return "登录态（推断）";
+  return "未知";
 }
 
 function backendStatusLabel(status: BackendStatus | null): string {
@@ -26,6 +38,7 @@ export function OverviewView({
   launch,
   recycleBin,
   diagnostics,
+  provider,
   onNavigate,
 }: {
   status: BackendStatus | null;
@@ -33,6 +46,7 @@ export function OverviewView({
   launch: LaunchSnapshot | null;
   recycleBin: RecycleBinSnapshot | null;
   diagnostics: DiagnosticsSnapshot | null;
+  provider: ProviderSnapshot | null;
   onNavigate: (view: ViewId) => void;
 }) {
   const deletedCount = recycleBin?.entries.length ?? 0;
@@ -100,6 +114,20 @@ export function OverviewView({
           <Metric label="需关注" value={`${failingChecks} 项`} />
         </dl>
         <button className="secondary summaryAction" onClick={() => onNavigate("diagnostics")} type="button">查看诊断</button>
+      </section>
+
+      <section className="taskPanel summaryTask">
+        <div className="taskHeader summaryTaskHeader">
+          <div className="panelTitle compactTitle">
+            <span className="rowIcon"><Network size={14} /></span>
+            <h2>模型通道</h2>
+          </div>
+        </div>
+        <dl className="metricGrid overviewMetrics">
+          <Metric label="当前模式" value={providerModeLabel(provider)} />
+          <Metric label="ChatGPT 登录" value={provider?.chatgptAuthenticated ? "已登录" : "未登录"} />
+        </dl>
+        <button className="secondary summaryAction" onClick={() => onNavigate("provider")} type="button">管理模型通道</button>
       </section>
     </div>
   );
