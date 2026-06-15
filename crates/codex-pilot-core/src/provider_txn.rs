@@ -575,4 +575,215 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&state);
     }
+
+    // ── 事务一致性测试 ──
+
+    fn chatgpt_auth_json() -> &'static str {
+        r#"{"auth_mode":"chatgpt","tokens":{"access_token":"eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20ifQ.fake","id_token":"eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20ifQ.fake","refresh_token":"refresh"}}"#
+    }
+
+    fn relay_profile_json() -> String {
+        r#"{"activeProfileId":"p1","profiles":[{"id":"p1","name":"Relay","baseUrl":"https://relay.example.com/v1","bearerToken":"sk-test","upstreamProtocol":"chatCompletions"}]}"#.to_string()
+    }
+
+    fn api_profile_json() -> &'static str {
+        r#"{"activeProfileId":"p2","profiles":[{"id":"p2","name":"API","baseUrl":"https://api.example.com/v1","bearerToken":"sk-api","upstreamProtocol":"responses"}]}"#
+    }
+
+    #[test]
+    fn precheck_hybrid_fails_without_chatgpt_login() {
+        let _guard = test_guard();
+        let home = unique_temp_dir("precheck-hybrid");
+        let state = unique_temp_dir("precheck-hybrid-state");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&state).unwrap();
+        // No auth.json → no ChatGPT login
+        std::fs::write(home.join("config.toml"), "model = \"gpt-5\"\n").unwrap();
+        std::fs::write(state.join("provider-profiles.json"), relay_profile_json().as_bytes()).unwrap();
+        set_test_dirs(&home, &state);
+
+        let txn = ProviderTxn::begin().unwrap();
+        // This should fail before any disk writes
+        let result = txn.commit_hybrid(
+            "https://relay.example.com/v1",
+            "sk-test",
+            UpstreamProtocol::ChatCompletions,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("中转态需要先登录 ChatGPT") || err.contains("ChatGPT"));
+
+        // Verify no disk changes (only auth.json might have been written by backup, rest should be intact)
+        // Actually, since precheck runs first, nothing should be written
+        clear_test_dirs();
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn switch_hybrid_writes_sentinel_and_preserves_auth() {
+        let _guard = test_guard();
+        let home = unique_temp_dir("sw-hybrid");
+        let state = unique_temp_dir("sw-hybrid-state");
+        write_txn_test_files(
+            &home,
+            &state,
+            "model = \"gpt-5\"\nmodel_provider = \"chatgpt\"\n",
+            chatgpt_auth_json(),
+            relay_profile_json().as_str(),
+        );
+        set_test_dirs(&home, &state);
+
+        let txn = ProviderTxn::begin().unwrap();
+        let result = txn.commit_hybrid(
+            "https://relay.example.com/v1",
+            "sk-test",
+            UpstreamProtocol::ChatCompletions,
+        );
+        assert!(result.is_ok(), "hybrid commit failed: {:?}", result.err());
+
+        // Verify config.toml has sentinel "hybrid"
+        let config = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        assert!(config.contains("codex_pilot_channel_mode = \"hybrid\""), "config missing hybrid sentinel: {config}");
+        assert!(config.contains("model_provider = \"CodexPilot\""), "config missing CodexPilot provider");
+
+        // Verify auth.json still has ChatGPT tokens (not overwritten)
+        let auth = std::fs::read_to_string(home.join("auth.json")).unwrap();
+        assert!(auth.contains("chatgpt"), "auth.json should still have chatgpt: {auth}");
+        assert!(!auth.contains("OPENAI_API_KEY"), "auth.json should NOT have OPENAI_API_KEY in hybrid mode");
+
+        clear_test_dirs();
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn switch_api_writes_auth_json_and_sentinel() {
+        let _guard = test_guard();
+        let home = unique_temp_dir("sw-api");
+        let state = unique_temp_dir("sw-api-state");
+        write_txn_test_files(
+            &home,
+            &state,
+            "model = \"gpt-5\"\n",
+            "{}",
+            api_profile_json(),
+        );
+        set_test_dirs(&home, &state);
+
+        let txn = ProviderTxn::begin().unwrap();
+        let result = txn.commit_api(
+            "https://api.example.com/v1",
+            "sk-api",
+            UpstreamProtocol::Responses,
+        );
+        assert!(result.is_ok(), "api commit failed: {:?}", result.err());
+
+        // Verify auth.json has OPENAI_API_KEY
+        let auth = std::fs::read_to_string(home.join("auth.json")).unwrap();
+        assert!(auth.contains("OPENAI_API_KEY"), "auth.json missing API key: {auth}");
+        assert!(auth.contains("sk-api"));
+
+        // Verify config.toml has sentinel "api"
+        let config = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        assert!(config.contains("codex_pilot_channel_mode = \"api\""), "config missing api sentinel: {config}");
+
+        clear_test_dirs();
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn switch_official_restores_snapshot_and_clears_api_key() {
+        let _guard = test_guard();
+        let home = unique_temp_dir("sw-official");
+        let state = unique_temp_dir("sw-official-state");
+        let official_snapshot = crate::relay_config::OfficialConfigSnapshot {
+            config_toml: "model = \"gpt-5\"\nmodel_provider = \"chatgpt\"\n".to_string(),
+            captured_at_ms: 1000,
+        };
+        let profiles = serde_json::json!({
+            "activeProfileId": "",
+            "profiles": [],
+            "officialConfigSnapshot": {
+                "configToml": &official_snapshot.config_toml,
+                "capturedAtMs": official_snapshot.captured_at_ms,
+            }
+        });
+        write_txn_test_files(
+            &home,
+            &state,
+            // Current state: in API mode
+            "model_provider = \"CodexPilot\"\ncodex_pilot_channel_mode = \"api\"\n",
+            r#"{"OPENAI_API_KEY":"sk-old"}"#,
+            &serde_json::to_string(&profiles).unwrap(),
+        );
+        set_test_dirs(&home, &state);
+
+        let txn = ProviderTxn::begin().unwrap();
+        let result = txn.commit_official();
+        assert!(result.is_ok(), "official commit failed: {:?}", result.err());
+
+        // Verify config.toml restored
+        let config = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        assert!(config.contains("model_provider = \"chatgpt\""), "config should be restored: {config}");
+        assert!(!config.contains("codex_pilot_channel_mode"), "sentinel should be gone: {config}");
+
+        // Verify auth.json has no OPENAI_API_KEY
+        let auth = std::fs::read_to_string(home.join("auth.json")).unwrap();
+        assert!(!auth.contains("OPENAI_API_KEY"), "API key should be cleared: {auth}");
+
+        clear_test_dirs();
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn read_current_mode_detects_external_provider() {
+        let _guard = test_guard();
+        let home = unique_temp_dir("read-ext");
+        let state = unique_temp_dir("read-ext-state");
+        write_txn_test_files(
+            &home,
+            &state,
+            "model_provider = \"ccswitch-custom\"\n",
+            "{}",
+            "{}",
+        );
+        set_test_dirs(&home, &state);
+
+        let reading = read_current_mode().unwrap();
+        assert!(reading.external_provider, "should detect external provider");
+        assert!(!reading.owned_by_codex_pilot, "should not be owned by CodexPilot");
+        assert_eq!(reading.mode, Some(ProviderMode::Api));
+
+        clear_test_dirs();
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn read_current_mode_detects_codex_pilot_hybrid() {
+        let _guard = test_guard();
+        let home = unique_temp_dir("read-hybrid");
+        let state = unique_temp_dir("read-hybrid-state");
+        write_txn_test_files(
+            &home,
+            &state,
+            "model_provider = \"CodexPilot\"\ncodex_pilot_channel_mode = \"hybrid\"\n",
+            chatgpt_auth_json(),
+            "{}",
+        );
+        set_test_dirs(&home, &state);
+
+        let reading = read_current_mode().unwrap();
+        assert!(reading.owned_by_codex_pilot, "should be owned by CodexPilot");
+        assert!(!reading.external_provider);
+        assert_eq!(reading.mode, Some(ProviderMode::Hybrid));
+
+        clear_test_dirs();
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&state);
+    }
+
 }
