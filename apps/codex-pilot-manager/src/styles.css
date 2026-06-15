@@ -2312,3 +2312,174 @@ dd {
     flex-direction: column;
   }
 }
+
+/* ── Provider: 三态切换 ── */
+
+.providerModeSwitches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.providerModeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.providerModeInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.providerModeName {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.providerModeDesc {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+/* ── Provider: 确认组 ── */
+
+.confirmGroup {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ── Provider: Profile 编辑表单 ── */
+
+.profileEditForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.formField label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.formField input,
+.formField select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.inputWithToggle {
+  display: flex;
+  gap: 4px;
+}
+
+.inputWithToggle input {
+  flex: 1;
+}
+
+.formActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* ── Provider: Profile 操作区 ── */
+
+.profileActions {
+  margin-bottom: 10px;
+}
+
+/* ── Provider: Profile 列表 ── */
+
+.profileRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  background: var(--surface);
+}
+
+.profileRow.active {
+  border-color: var(--accent, #3b82f6);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 6%, var(--surface));
+}
+
+.profileInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.profileName {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.profileUrl {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profileProtocol {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+}
+
+.profileRowActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ── Provider: 错误面板 ── */
+
+.errorPanel {
+  border-color: var(--danger, #ef4444) !important;
+}
+
+.errorText {
+  color: var(--danger, #ef4444);
+  font-size: 0.85rem;
+}
+
+/* ── Provider: 空提示 ── */
+
+.emptyHint {
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 16px 0;
+}

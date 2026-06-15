@@ -331,3 +331,168 @@ fn load_active_proxy_target() -> anyhow::Result<Option<crate::protocol_proxy::Ac
 // Old proxy-related tests; import expectations reference protocol_proxy types.
 // No model-request routing tests are here because the hybrid guard
 // reads config.toml. Those are deferred to transaction/integration tests.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol_proxy::{RouteMode, UpstreamProtocol};
+    use serde_json::json;
+    use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
+
+    fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+        static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+        GUARD
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        std::env::temp_dir().join(format!(
+            "codex-pilot-helper-{name}-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ))
+    }
+
+    fn write_provider_profiles(
+        root: &std::path::Path,
+        base_url: &str,
+        protocol: &str,
+    ) -> anyhow::Result<()> {
+        let state = json!({
+            "activeProfileId": "p1",
+            "profiles": [{
+                "id": "p1",
+                "name": "test",
+                "baseUrl": base_url,
+                "bearerToken": "sk-test",
+                "upstreamProtocol": protocol
+            }]
+        });
+        std::fs::create_dir_all(root)?;
+        std::fs::write(
+            root.join("provider-profiles.json"),
+            serde_json::to_vec_pretty(&state)?,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn helper_identifies_responses_and_models_routes() {
+        let _guard = test_guard();
+        assert_eq!(
+            helper_proxy_route("POST", "/v1/responses", r#"{"stream":true}"#),
+            Some(HelperProxyRoute::Responses { stream: true })
+        );
+        assert_eq!(
+            helper_proxy_route("POST", "/responses/compact", r#"{"stream":false}"#),
+            Some(HelperProxyRoute::Responses { stream: false })
+        );
+        assert_eq!(
+            helper_proxy_route("GET", "/v1/models", ""),
+            Some(HelperProxyRoute::Models)
+        );
+        assert_eq!(helper_proxy_route("POST", "/backend/status", ""), None);
+    }
+
+    #[test]
+    fn helper_loads_chat_proxy_target_from_profiles() {
+        let _guard = test_guard();
+        let root = unique_temp_dir("chat-target");
+        crate::app_paths::set_test_app_state_dir(Some(root.clone()));
+        write_provider_profiles(&root, "https://chat.example/v1", "chatCompletions").unwrap();
+
+        let target = load_active_proxy_target().unwrap().unwrap();
+        assert_eq!(target.base_url, "https://chat.example/v1");
+        assert_eq!(target.api_key, "sk-test");
+        assert_eq!(target.protocol, UpstreamProtocol::ChatCompletions);
+        assert_eq!(
+            crate::protocol_proxy::route_mode_for_protocol(target.protocol),
+            RouteMode::LocalProxy
+        );
+
+        crate::app_paths::set_test_app_state_dir(None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn helper_loads_anthropic_proxy_target_from_profiles() {
+        let _guard = test_guard();
+        let root = unique_temp_dir("anthropic-target");
+        crate::app_paths::set_test_app_state_dir(Some(root.clone()));
+        write_provider_profiles(&root, "https://anthropic.example/v1", "anthropicMessages")
+            .unwrap();
+
+        let target = load_active_proxy_target().unwrap().unwrap();
+        assert_eq!(target.base_url, "https://anthropic.example/v1");
+        assert_eq!(target.protocol, UpstreamProtocol::AnthropicMessages);
+        assert_eq!(
+            crate::protocol_proxy::route_mode_for_protocol(target.protocol),
+            RouteMode::LocalProxy
+        );
+
+        crate::app_paths::set_test_app_state_dir(None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn helper_ignores_direct_responses_profiles() {
+        let _guard = test_guard();
+        let root = unique_temp_dir("direct-target");
+        crate::app_paths::set_test_app_state_dir(Some(root.clone()));
+        write_provider_profiles(&root, "https://responses.example/v1", "responses").unwrap();
+
+        assert!(load_active_proxy_target().unwrap().is_none());
+
+        crate::app_paths::set_test_app_state_dir(None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn is_hybrid_channel_mode_detects_hybrid_sentinel() {
+        let _guard = test_guard();
+        let root = unique_temp_dir("hybrid-sentinel");
+        crate::app_paths::set_test_codex_home_dir(Some(root.clone()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("config.toml"),
+            "model_provider = \"CodexPilot\"\ncodex_pilot_channel_mode = \"hybrid\"\n",
+        )
+        .unwrap();
+
+        assert!(is_hybrid_channel_mode().unwrap());
+
+        crate::app_paths::set_test_codex_home_dir(None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn is_hybrid_channel_mode_rejects_api_and_missing() {
+        let _guard = test_guard();
+        let root = unique_temp_dir("no-hybrid");
+        crate::app_paths::set_test_codex_home_dir(Some(root.clone()));
+        std::fs::create_dir_all(&root).unwrap();
+
+        // API sentinel
+        std::fs::write(
+            root.join("config.toml"),
+            "codex_pilot_channel_mode = \"api\"\n",
+        )
+        .unwrap();
+        assert!(!is_hybrid_channel_mode().unwrap());
+
+        // Missing config.toml
+        std::fs::remove_file(root.join("config.toml")).unwrap();
+        assert!(!is_hybrid_channel_mode().unwrap());
+
+        crate::app_paths::set_test_codex_home_dir(None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
