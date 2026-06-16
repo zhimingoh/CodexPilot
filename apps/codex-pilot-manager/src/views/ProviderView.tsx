@@ -93,11 +93,13 @@ export function ProviderView({
     }
     runAction("save", () =>
       callBackend("save_provider_profile", {
-        id: isCreating ? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : editingId,
-        name: profileName.trim(),
-        baseUrl: baseUrl.trim(),
-        bearerToken: bearerToken.trim(),
-        upstreamProtocol,
+        request: {
+          id: isCreating ? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : editingId,
+          name: profileName.trim(),
+          baseUrl: baseUrl.trim(),
+          bearerToken: bearerToken.trim(),
+          upstreamProtocol,
+        },
       })
     ).then(() => {
       setIsCreating(false);
@@ -118,11 +120,13 @@ export function ProviderView({
   const switchMode = (mode: string, profileId?: string) => {
     runAction("switch", () =>
       callBackend("switch_provider_mode", {
-        mode,
-        profileId: profileId ?? "",
-        baseUrl: "",
-        apiKey: "",
-        upstreamProtocol: "",
+        request: {
+          mode,
+          profileId: profileId ?? "",
+          baseUrl: "",
+          apiKey: "",
+          upstreamProtocol: "",
+        },
       })
     ).then(() => setSwitchConfirm(null));
   };

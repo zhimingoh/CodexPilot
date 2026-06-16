@@ -2428,8 +2428,8 @@ dd {
 }
 
 .profileRow.active {
-  border-color: var(--accent, #3b82f6);
-  background: color-mix(in srgb, var(--accent, #3b82f6) 6%, var(--surface));
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 6%, var(--surface));
 }
 
 .profileInfo {
@@ -2467,11 +2467,11 @@ dd {
 /* ── Provider: 错误面板 ── */
 
 .errorPanel {
-  border-color: var(--danger, #ef4444) !important;
+  border-color: var(--danger-border) !important;
 }
 
 .errorText {
-  color: var(--danger, #ef4444);
+  color: var(--danger-text);
   font-size: 0.85rem;
 }
 
