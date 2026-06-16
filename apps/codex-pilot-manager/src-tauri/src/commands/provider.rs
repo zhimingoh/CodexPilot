@@ -1,4 +1,3 @@
-use super::super::*;
 use codex_pilot_core::protocol_proxy::UpstreamProtocol;
 use codex_pilot_core::provider_txn::{self, ProviderMode, ProviderTxn};
 use serde::{Deserialize, Serialize};
@@ -101,14 +100,6 @@ fn parse_upstream_protocol(value: &str) -> UpstreamProtocol {
         "chatCompletions" => UpstreamProtocol::ChatCompletions,
         "anthropicMessages" => UpstreamProtocol::AnthropicMessages,
         _ => UpstreamProtocol::Responses,
-    }
-}
-
-fn upstream_protocol_str(protocol: UpstreamProtocol) -> &'static str {
-    match protocol {
-        UpstreamProtocol::Responses => "responses",
-        UpstreamProtocol::ChatCompletions => "chatCompletions",
-        UpstreamProtocol::AnthropicMessages => "anthropicMessages",
     }
 }
 
@@ -220,12 +211,22 @@ pub(crate) async fn switch_provider_mode(
                 (String::new(), String::new(), UpstreamProtocol::Responses)
             };
 
+        // 离开非托管态（官方/外部）进入中转/纯API 前，必须先捕获官方基线快照，
+        // 否则之后切回登录态将没有可恢复的原始 config。
+        // 在 ProviderTxn::begin() 之前捕获，使快照纳入事务范围、可随回滚保留。
+        if matches!(mode, ProviderMode::Hybrid | ProviderMode::Api) {
+            capture_official_snapshot_if_external()?;
+        }
+
         let txn = ProviderTxn::begin().map_err(|e| e.to_string())?;
         let _result = match mode {
             ProviderMode::Official => txn.commit_official().map_err(|e| e.to_string())?,
-            ProviderMode::Hybrid => txn
-                .commit_hybrid(&base_url, &api_key, protocol)
-                .map_err(|e| e.to_string())?,
+            ProviderMode::Hybrid => {
+                // 用 helper 实际监听端口（启动偏好里的配置端口），不要硬编码常量。
+                let helper_port = crate::launch_settings::load_launch_preferences().helper_port;
+                txn.commit_hybrid(&base_url, &api_key, protocol, helper_port)
+                    .map_err(|e| e.to_string())?
+            }
             ProviderMode::Api => txn
                 .commit_api(&base_url, &api_key, protocol)
                 .map_err(|e| e.to_string())?,

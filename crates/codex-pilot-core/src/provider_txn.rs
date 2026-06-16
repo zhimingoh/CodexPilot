@@ -154,9 +154,20 @@ impl ProviderTxn {
     pub fn commit_official(self) -> anyhow::Result<TxnResult> {
         self.precheck_official()?;
 
+        // 解析快照（缺失/空串 = None，绝不退化成"写空 config.toml"）。
         let snapshot = self.read_official_snapshot()?;
 
-        if let Err(e) = self.apply_official_inner(&snapshot) {
+        // fail-fast 零写盘安全判定：
+        // 当前若由 CodexPilot 托管（中转/纯API 留下哨兵键），恢复登录态必须有官方基线快照，
+        // 否则无法还原原始 config，宁可报错也不清空当前配置。
+        if snapshot.is_none() && self.config_is_codex_managed() {
+            anyhow::bail!(
+                "未捕获官方原版快照，无法安全恢复登录态（避免清空当前配置）。\
+                 请确保切换到中转/纯API态前已捕获官方快照。"
+            );
+        }
+
+        if let Err(e) = self.apply_official_inner(snapshot.as_ref()) {
             let _ = self.rollback();
             anyhow::bail!(e);
         }
@@ -167,38 +178,55 @@ impl ProviderTxn {
         })
     }
 
-    fn read_official_snapshot(&self) -> anyhow::Result<OfficialConfigSnapshot> {
-        match &self.profiles_json {
-            FileSnapshot::Exists(data) => {
-                let v: serde_json::Value =
-                    serde_json::from_slice(data).context("无法解析 provider-profiles.json")?;
-                let toml_str = v
-                    .get("officialConfigSnapshot")
-                    .and_then(|s| s.get("configToml"))
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("");
-                Ok(OfficialConfigSnapshot {
-                    config_toml: toml_str.to_string(),
-                    captured_at_ms: 0,
-                })
-            }
-            FileSnapshot::Missing => Ok(OfficialConfigSnapshot {
-                config_toml: String::new(),
-                captured_at_ms: 0,
-            }),
+    /// 读取官方快照。**仅当字段存在且 configToml 非空**时返回 Some；
+    /// 字段缺失或为空串一律返回 None（不把"无快照"塌成"空配置"）。
+    fn read_official_snapshot(&self) -> anyhow::Result<Option<OfficialConfigSnapshot>> {
+        let FileSnapshot::Exists(data) = &self.profiles_json else {
+            return Ok(None);
+        };
+        let v: serde_json::Value =
+            serde_json::from_slice(data).context("无法解析 provider-profiles.json")?;
+        let toml_str = v
+            .get("officialConfigSnapshot")
+            .and_then(|s| s.get("configToml"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        if toml_str.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(OfficialConfigSnapshot {
+            config_toml: toml_str.to_string(),
+            captured_at_ms: 0,
+        }))
+    }
+
+    /// 当前 config.toml 是否由 CodexPilot 托管（带哨兵键）。
+    fn config_is_codex_managed(&self) -> bool {
+        match &self.config_toml {
+            FileSnapshot::Exists(data) => String::from_utf8_lossy(data)
+                .lines()
+                .any(|line| line.trim().starts_with("codex_pilot_channel_mode")),
+            FileSnapshot::Missing => false,
         }
     }
 
-    fn apply_official_inner(&self, snapshot: &OfficialConfigSnapshot) -> anyhow::Result<()> {
+    fn apply_official_inner(
+        &self,
+        snapshot: Option<&OfficialConfigSnapshot>,
+    ) -> anyhow::Result<()> {
         let config_path = self.config_path();
-        let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
-        backup_existing_config(&config_path, &existing)?;
 
-        // 写回快照内容（空串=config.toml 原本不存在→写空）
-        if snapshot.config_toml.is_empty() {
-            std::fs::write(&config_path, "").context("恢复空 config.toml")?;
-        } else {
-            std::fs::write(&config_path, &snapshot.config_toml).context("恢复官方 config.toml")?;
+        match snapshot {
+            // 有官方基线快照：备份当前 → 写回快照。
+            Some(snapshot) => {
+                let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+                backup_existing_config(&config_path, &existing)?;
+                std::fs::write(&config_path, &snapshot.config_toml)
+                    .context("恢复官方 config.toml")?;
+            }
+            // 无快照：到这里一定是"当前非托管"（托管+无快照已在 commit 前报错）。
+            // 当前配置即官方/外部基线，**不触碰 config.toml**，仅清 API key。
+            None => {}
         }
 
         // 清除 auth.json 中的 OPENAI_API_KEY（保留 ChatGPT tokens）
@@ -209,11 +237,16 @@ impl ProviderTxn {
     }
 
     /// 切换到中转态(hybrid)：写 relay config + 哨兵 "hybrid"，保留 auth.json。
+    ///
+    /// `helper_port` 必须是 helper 实际监听的端口（manager 从启动偏好读取），
+    /// 而非硬编码常量——否则 58888 被占回退到随机端口时，写进 config 的本地代理
+    /// 地址会指向没人监听的端口，混合中转静默失效。
     pub fn commit_hybrid(
         self,
         base_url: &str,
         bearer_token: &str,
         upstream_protocol: UpstreamProtocol,
+        helper_port: u16,
     ) -> anyhow::Result<TxnResult> {
         self.precheck_hybrid()?;
 
@@ -221,7 +254,9 @@ impl ProviderTxn {
             anyhow::bail!("中转态需要填写 Base URL。");
         }
 
-        if let Err(e) = self.apply_hybrid_inner(base_url, bearer_token, upstream_protocol) {
+        if let Err(e) =
+            self.apply_hybrid_inner(base_url, bearer_token, upstream_protocol, helper_port)
+        {
             let _ = self.rollback();
             anyhow::bail!(e);
         }
@@ -237,16 +272,14 @@ impl ProviderTxn {
         base_url: &str,
         bearer_token: &str,
         upstream_protocol: UpstreamProtocol,
+        helper_port: u16,
     ) -> anyhow::Result<()> {
         let config_path = self.config_path();
         let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
         backup_existing_config(&config_path, &existing)?;
 
-        let codex_base_url = protocol_proxy::proxy_base_url_for_protocol(
-            base_url,
-            upstream_protocol,
-            protocol_proxy::DEFAULT_PROTOCOL_PROXY_PORT,
-        );
+        let codex_base_url =
+            protocol_proxy::proxy_base_url_for_protocol(base_url, upstream_protocol, helper_port);
         let updated = upsert_relay_provider_config(
             &existing,
             &codex_base_url,
@@ -608,6 +641,7 @@ mod tests {
             "https://relay.example.com/v1",
             "sk-test",
             UpstreamProtocol::ChatCompletions,
+            58888,
         );
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -639,6 +673,7 @@ mod tests {
             "https://relay.example.com/v1",
             "sk-test",
             UpstreamProtocol::ChatCompletions,
+            58888,
         );
         assert!(result.is_ok(), "hybrid commit failed: {:?}", result.err());
 
@@ -662,6 +697,48 @@ mod tests {
         assert!(
             !auth.contains("OPENAI_API_KEY"),
             "auth.json should NOT have OPENAI_API_KEY in hybrid mode"
+        );
+
+        clear_test_dirs();
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn hybrid_config_points_codex_at_actual_helper_port() {
+        // 回归测试:写进 config 的本地代理地址必须用传入的真实 helper 端口,
+        // 而非硬编码常量(58888 被占回退随机端口时不能对不上)。
+        let _guard = test_guard();
+        let home = unique_temp_dir("hybrid-port");
+        let state = unique_temp_dir("hybrid-port-state");
+        write_txn_test_files(
+            &home,
+            &state,
+            "model = \"gpt-5\"\n",
+            chatgpt_auth_json(),
+            relay_profile_json().as_str(),
+        );
+        set_test_dirs(&home, &state);
+
+        let custom_port: u16 = 61234;
+        let txn = ProviderTxn::begin().unwrap();
+        let result = txn.commit_hybrid(
+            "https://relay.example.com/v1",
+            "sk-test",
+            // ChatCompletions → LocalProxy 路由,base_url 改写成本地 helper 地址
+            UpstreamProtocol::ChatCompletions,
+            custom_port,
+        );
+        assert!(result.is_ok(), "hybrid commit failed: {:?}", result.err());
+
+        let config = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        assert!(
+            config.contains(&format!("127.0.0.1:{custom_port}")),
+            "config must point Codex at the real helper port {custom_port}: {config}"
+        );
+        assert!(
+            !config.contains("127.0.0.1:58888"),
+            "config must not hardcode the default port: {config}"
         );
 
         clear_test_dirs();
@@ -758,6 +835,72 @@ mod tests {
         assert!(
             !auth.contains("OPENAI_API_KEY"),
             "API key should be cleared: {auth}"
+        );
+
+        clear_test_dirs();
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn official_without_snapshot_does_not_wipe_unmanaged_config() {
+        // 回归测试:官方态(非托管)+ 有 ChatGPT 登录 + 无快照 → 切登录态绝不清空 config.toml。
+        let _guard = test_guard();
+        let home = unique_temp_dir("official-nowipe");
+        let state = unique_temp_dir("official-nowipe-state");
+        let original_config = "model = \"gpt-5\"\nmodel_provider = \"chatgpt\"\n";
+        write_txn_test_files(
+            &home,
+            &state,
+            original_config,
+            chatgpt_auth_json(),
+            // profiles 存在但无 officialConfigSnapshot 字段
+            r#"{"activeProfileId":"","profiles":[]}"#,
+        );
+        set_test_dirs(&home, &state);
+
+        let txn = ProviderTxn::begin().unwrap();
+        let result = txn.commit_official();
+        assert!(result.is_ok(), "official commit failed: {:?}", result.err());
+
+        // config.toml 必须原样保留,绝不被写空
+        let config = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        assert_eq!(
+            config, original_config,
+            "non-managed config must not be touched when no snapshot exists"
+        );
+
+        clear_test_dirs();
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn official_without_snapshot_errors_when_codex_managed() {
+        // 托管态(哨兵键)+ 无快照 → 必须 fail-fast 报错,且零写盘(不清空 config)。
+        let _guard = test_guard();
+        let home = unique_temp_dir("official-managed-err");
+        let state = unique_temp_dir("official-managed-err-state");
+        let managed_config =
+            "model_provider = \"CodexPilot\"\ncodex_pilot_channel_mode = \"hybrid\"\n";
+        write_txn_test_files(
+            &home,
+            &state,
+            managed_config,
+            chatgpt_auth_json(),
+            r#"{"activeProfileId":"","profiles":[]}"#,
+        );
+        set_test_dirs(&home, &state);
+
+        let txn = ProviderTxn::begin().unwrap();
+        let result = txn.commit_official();
+        assert!(result.is_err(), "should refuse to restore without baseline");
+
+        // config.toml 不被改动
+        let config = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        assert_eq!(
+            config, managed_config,
+            "managed config must stay intact on error"
         );
 
         clear_test_dirs();
