@@ -119,8 +119,8 @@ mod tests {
         let manifest_items = manifest.as_array().unwrap();
         assert_eq!(manifest_items.len(), 1);
         assert_eq!(
-            manifest_items[0]["path"],
-            rollout.to_string_lossy().to_string()
+            PathBuf::from(manifest_items[0]["path"].as_str().unwrap()),
+            rollout
         );
         assert!(manifest_items[0].get("originalFirstLine").is_some());
         assert!(manifest_items[0].get("separator").is_none());
@@ -144,6 +144,34 @@ mod tests {
         let result = run_provider_sync(Some(&home));
         assert_eq!(result.status, ProviderSyncStatus::Skipped);
         assert!(result.message.contains("正在运行"));
+
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn provider_sync_with_target_preserves_explicit_target_compatibility() {
+        let home = unique_temp_dir("provider-sync-explicit-target");
+        fs::create_dir_all(home.join("sessions/2026")).unwrap();
+        fs::write(home.join("config.toml"), "model_provider = \"current\"\n").unwrap();
+        let rollout = home.join("sessions/2026/rollout-thread-2.jsonl");
+        fs::write(
+            &rollout,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"thread-2\",\"model_provider\":\"old\"}}\n",
+        )
+        .unwrap();
+
+        let result = run_provider_sync_with_target(Some(&home), Some("manual-target"));
+
+        assert_eq!(result.status, ProviderSyncStatus::Synced);
+        assert_eq!(result.target_provider, "manual-target");
+        let first_line = fs::read_to_string(&rollout)
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap()
+            .to_string();
+        let value = serde_json::from_str::<Value>(&first_line).unwrap();
+        assert_eq!(value["payload"]["model_provider"], "manual-target");
 
         let _ = fs::remove_dir_all(home);
     }

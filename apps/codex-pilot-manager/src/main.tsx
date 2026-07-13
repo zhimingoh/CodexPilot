@@ -61,6 +61,7 @@ function App() {
   const [progressMessage, setProgressMessage] = React.useState("");
   const [launching, setLaunching] = React.useState(false);
   const [restartConfirming, setRestartConfirming] = React.useState(false);
+  const [dialogSyncRefreshVersion, setDialogSyncRefreshVersion] = React.useState(0);
   const autoLaunchAttemptedRef = React.useRef(false);
   const autoLaunchFailedRef = React.useRef(false);
   const launchRequestIdRef = React.useRef(0);
@@ -87,7 +88,10 @@ function App() {
   }, [theme]);
 
   const refresh = React.useCallback((silent = false) => {
-    if (!silent) notify("正在刷新");
+    if (!silent) {
+      notify("正在刷新");
+      setDialogSyncRefreshVersion((current) => current + 1);
+    }
     Promise.all([
       callBackend<BackendStatus | null>("backend_status")
         .then(setStatus)
@@ -459,6 +463,7 @@ function App() {
         {activeView === "sessions" && (
           <RecycleBinView
             recycleBin={recycleBin}
+            syncRefreshVersion={dialogSyncRefreshVersion}
             onMessage={notify}
             onProgress={setProgressMessage}
             onRefresh={refresh}

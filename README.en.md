@@ -65,7 +65,7 @@ When `Global Fast` is off, use the lightning button in the Pilot pill at the bot
 
 ### Dialog Sync
 
-After ccSwitch or another tool changes `model_provider` in `~/.codex/config.toml`, historical sessions may disappear or group incorrectly because their Provider metadata no longer matches. CodexPilot does not rewrite historical data automatically; in Dialog Maintenance, you can preview the impact first, then manually sync session ownership to the current config provider or a manually entered Provider.
+After ccSwitch or another tool changes `model_provider` in `~/.codex/config.toml`, historical sessions may disappear or group incorrectly because their Provider metadata no longer matches. Open Dialog Maintenance and click `Sync All Dialogs`; CodexPilot reads the current Provider automatically and assigns all local active and archived history to it. Click again after switching Providers when needed; CodexPilot never rewrites historical data automatically in the background.
 
 ![CodexPilot dialog maintenance page](docs/images/readme-dialog-maintenance.png)
 

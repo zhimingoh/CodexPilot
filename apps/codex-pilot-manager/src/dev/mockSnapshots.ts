@@ -1,6 +1,13 @@
 type MockCommandHandler = (args?: unknown) => unknown;
 
 const nowSeconds = Math.floor(Date.now() / 1000);
+let providerSyncAligned = false;
+let providerSyncSnapshotAttempts = 0;
+
+function shouldFailProviderSyncSnapshot() {
+  return new URLSearchParams(window.location.search).has("dialogSyncFailOnce")
+    && providerSyncSnapshotAttempts === 1;
+}
 
 const commandHandlers: Record<string, MockCommandHandler> = {
   backend_status: () => ({
@@ -81,26 +88,32 @@ const commandHandlers: Record<string, MockCommandHandler> = {
       JSON.stringify({ level: "warn", message: "preview injection refresh recommended" }),
     ],
   }),
-  provider_sync_snapshot: () => ({
-    targetProvider: "acme-relay",
-    currentProvider: "acme-relay",
-    availableProviders: ["acme-relay", "openai"],
-    rolloutFiles: 42,
-    rolloutRewriteNeeded: 18,
-    sqliteRows: 44,
-    sqliteProviderRowsNeedingSync: 19,
-    sqliteTotalUpdatesNeeded: 21,
-    rolloutProviders: [
-      { provider: "openai", count: 18 },
-      { provider: "acme-relay", count: 16 },
-      { provider: "acme-relay", count: 8 },
-    ],
-    sqliteProviders: [
-      { provider: "openai", count: 19 },
-      { provider: "acme-relay", count: 17 },
-      { provider: "acme-relay", count: 8 },
-    ],
-  }),
+  provider_sync_snapshot: () => {
+    providerSyncSnapshotAttempts += 1;
+    if (shouldFailProviderSyncSnapshot()) {
+      throw new Error("预览模式：首次对话同步检查失败");
+    }
+    return {
+      targetProvider: "team-relay-production-ap-southeast-1",
+      currentProvider: "team-relay-production-ap-southeast-1",
+      availableProviders: ["team-relay-production-ap-southeast-1", "openai"],
+      rolloutFiles: 42,
+      rolloutRewriteNeeded: providerSyncAligned ? 0 : 18,
+      sqliteRows: 44,
+      sqliteProviderRowsNeedingSync: providerSyncAligned ? 0 : 19,
+      sqliteTotalUpdatesNeeded: providerSyncAligned ? 0 : 21,
+      rolloutProviders: [
+        { provider: "openai", count: providerSyncAligned ? 0 : 18 },
+        { provider: "team-relay-production-ap-southeast-1", count: providerSyncAligned ? 42 : 16 },
+        { provider: "legacy-relay", count: providerSyncAligned ? 0 : 8 },
+      ],
+      sqliteProviders: [
+        { provider: "openai", count: providerSyncAligned ? 0 : 19 },
+        { provider: "team-relay-production-ap-southeast-1", count: providerSyncAligned ? 44 : 17 },
+        { provider: "legacy-relay", count: providerSyncAligned ? 0 : 8 },
+      ],
+    };
+  },
   app_version: () => "0.9.5-preview",
   check_latest_release: () => ({
     currentVersion: "0.9.5-preview",
@@ -137,7 +150,10 @@ const commandHandlers: Record<string, MockCommandHandler> = {
     fastGlobalMode: true,
   }),
   save_enhancement_settings: () => "预览模式：页面增强设置已保存，重新注入后生效。",
-  sync_provider_sessions: () => "预览模式：Provider Sync 完成，目标 acme-relay，会话文件 18 个，数据库行 19 条。",
+  sync_provider_sessions: () => {
+    providerSyncAligned = true;
+    return "预览模式：已将全部对话同步到当前 Provider team-relay-production-ap-southeast-1，会话文件 18 个，数据库行 19 条。";
+  },
   restore_recycle_bin_entries: () => ({
     message: "预览模式：已恢复所选会话",
     succeededTokens: ["preview-token-restore"],

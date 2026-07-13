@@ -1334,37 +1334,10 @@ h2 {
   gap: 10px;
 }
 
-.syncControls {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.syncControls.customMode {
-  max-width: 640px;
-}
-
-.syncControls label {
-  display: grid;
-  gap: 6px;
-}
-
-.syncControls label span {
-  color: var(--app-label);
-  font-size: 12px;
-}
-
 .syncSummaryGrid {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-}
-
-.syncFieldRow {
-  align-items: center;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .syncStatusCard {
@@ -1407,15 +1380,9 @@ h2 {
 .syncStatusCard dl {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(2, minmax(96px, 1fr));
+  grid-template-columns: 1fr;
   margin: 0;
   min-width: 0;
-}
-
-.syncActionGroup {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
 }
 
 .syncStatusIcon {
@@ -1429,14 +1396,26 @@ h2 {
   width: 28px;
 }
 
-.syncStatusCard.ok .syncStatusIcon {
+.syncStatusCard.synced .syncStatusIcon {
   background: var(--ok-bg-soft);
   color: var(--ok-text);
 }
 
-.syncStatusCard.needsSync .syncStatusIcon {
+.syncStatusCard.ready .syncStatusIcon,
+.syncStatusCard.syncing .syncStatusIcon {
   background: var(--warning-bg);
   color: var(--warning-text);
+}
+
+.syncStatusCard.checking .syncStatusIcon {
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  color: var(--app-muted);
+}
+
+.syncStatusCard.failed .syncStatusIcon {
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .syncDetails {
@@ -2218,11 +2197,19 @@ dd {
 @media (max-width: 760px) {
   .shell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .sidebar {
     border-bottom: 1px solid var(--border);
     border-right: 0;
+    height: auto;
+    overflow: visible;
+  }
+
+  .content {
+    height: auto;
+    min-height: 0;
   }
 
   .navList {
@@ -2280,10 +2267,6 @@ dd {
     grid-template-columns: 1fr;
   }
 
-  .syncFieldRow {
-    grid-template-columns: 1fr;
-  }
-
   .preferenceGrid {
     grid-template-columns: 1fr;
   }
@@ -2301,10 +2284,6 @@ dd {
   .syncStatusCard dl {
     grid-template-columns: 1fr;
     min-width: 0;
-  }
-
-  .syncActionGroup {
-    justify-content: flex-start;
   }
 
   .taskHeader {

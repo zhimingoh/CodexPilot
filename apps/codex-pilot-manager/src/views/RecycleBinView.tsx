@@ -2,8 +2,17 @@ import * as React from "react";
 import { CheckCircle2, Download, History, RefreshCw, Trash2 } from "lucide-react";
 import { callBackend } from "../backend";
 import { Distribution, Metric } from "../components/primitives";
+import {
+  currentProviderSyncCommand,
+  dialogSyncAction,
+  dialogSyncPending,
+  runDialogSyncCycle,
+  shouldRefreshDialogSync,
+  type DialogSyncLoadState,
+  type DialogSyncRefreshTrigger,
+} from "../dialogSync";
+import { recycleBinEntries } from "../recycleBinSupport";
 import type {
-  ProviderCount,
   ProviderSyncSnapshot,
   RecycleBinBatchResponse,
   RecycleBinEntry,
@@ -16,16 +25,18 @@ import type {
 
 export function RecycleBinView({
   recycleBin,
+  syncRefreshVersion,
   onMessage,
   onProgress,
   onRefresh,
 }: {
   recycleBin: RecycleBinSnapshot | null;
+  syncRefreshVersion: number;
   onMessage: (message: string) => void;
   onProgress: (message: string) => void;
   onRefresh: () => void;
 }) {
-  const entries = recycleBin?.entries ?? [];
+  const entries = recycleBinEntries(recycleBin);
   const [selected, setSelected] = React.useState<string[]>([]);
   const [pendingAction, setPendingAction] = React.useState("");
   const [zipBusy, setZipBusy] = React.useState<"" | "export" | "inspect" | "import">("");
@@ -33,30 +44,40 @@ export function RecycleBinView({
   const [zipImportMode, setZipImportMode] = React.useState<SessionZipImportMode | "">("");
   const [zipOverwriteConfirm, setZipOverwriteConfirm] = React.useState(false);
   const [syncSnapshot, setSyncSnapshot] = React.useState<ProviderSyncSnapshot | null>(null);
-  const [syncTarget, setSyncTarget] = React.useState("");
-  const [customSyncTarget, setCustomSyncTarget] = React.useState("");
-  const [syncInspecting, setSyncInspecting] = React.useState(false);
+  const [syncLoadState, setSyncLoadState] = React.useState<DialogSyncLoadState>("loading");
   const [syncBusy, setSyncBusy] = React.useState(false);
-  const [syncConfirming, setSyncConfirming] = React.useState(false);
+  const syncBusyRef = React.useRef(false);
+  const syncRefreshRef = React.useRef<Promise<ProviderSyncSnapshot> | null>(null);
   const [deleteConfirming, setDeleteConfirming] = React.useState(false);
   const selectedEntries = entries.filter((entry) => selected.includes(entry.token));
   const recoverableSelected = selectedEntries.filter((entry) => entry.recoverable);
   const allSelected = entries.length > 0 && selected.length === entries.length;
-  const selectedSyncTarget = syncTarget === "__custom" ? customSyncTarget.trim() : syncTarget;
-
-  const refreshProviderSync = React.useCallback((target?: string) => {
-    const trimmedTarget = target?.trim();
-    const args = trimmedTarget ? { request: { targetProvider: trimmedTarget } } : undefined;
-    return callBackend<ProviderSyncSnapshot>("provider_sync_snapshot", args)
+  const refreshProviderSync = React.useCallback(() => {
+    if (syncRefreshRef.current) return syncRefreshRef.current;
+    setSyncLoadState("loading");
+    const request = callBackend<ProviderSyncSnapshot>("provider_sync_snapshot")
       .then((snapshot) => {
         setSyncSnapshot(snapshot);
-        setSyncConfirming(false);
-        if (syncTarget !== "__custom") {
-          setSyncTarget(snapshot.targetProvider);
-        }
+        setSyncLoadState("ready");
         return snapshot;
+      })
+      .catch((error) => {
+        setSyncSnapshot(null);
+        setSyncLoadState("failed");
+        throw error;
+      })
+      .finally(() => {
+        syncRefreshRef.current = null;
       });
-  }, [syncTarget]);
+    syncRefreshRef.current = request;
+    return request;
+  }, []);
+
+  const requestProviderSyncRefresh = React.useCallback((trigger: DialogSyncRefreshTrigger) => {
+    if (!shouldRefreshDialogSync(trigger, document.visibilityState, syncBusyRef.current)) return;
+    refreshProviderSync()
+      .catch((error) => onMessage(`检查对话同步失败：${String(error)}`));
+  }, [onMessage, refreshProviderSync]);
 
   React.useEffect(() => {
     setSelected((current) => current.filter((token) => entries.some((entry) => entry.token === token)));
@@ -67,13 +88,20 @@ export function RecycleBinView({
   }, [selected.length, entries]);
 
   React.useEffect(() => {
-    refreshProviderSync()
-      .catch((error) => onMessage(`检查对话同步失败：${String(error)}`));
-  }, []);
+    requestProviderSyncRefresh("mount");
+    const handleFocus = () => requestProviderSyncRefresh("focus");
+    const handleVisibility = () => requestProviderSyncRefresh("visibility");
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [requestProviderSyncRefresh]);
 
   React.useEffect(() => {
-    setSyncConfirming(false);
-  }, [selectedSyncTarget]);
+    if (syncRefreshVersion > 0) requestProviderSyncRefresh("manual");
+  }, [requestProviderSyncRefresh, syncRefreshVersion]);
 
   React.useEffect(() => {
     setZipOverwriteConfirm(false);
@@ -219,59 +247,52 @@ export function RecycleBinView({
       });
   };
 
-  const inspectProviderSync = () => {
-    if (syncInspecting) return;
-    const target = selectedSyncTarget;
-    const label = target || syncSnapshot?.currentProvider || "当前配置";
-    setSyncInspecting(true);
-    onMessage(`正在检查对话同步：${label}`);
-    refreshProviderSync(target || undefined)
-      .then((snapshot) => onMessage(`检查完成：${providerSyncSummary(snapshot)}`))
-      .catch((error) => onMessage(`检查对话同步失败：${String(error)}`))
-      .finally(() => setSyncInspecting(false));
-  };
-
   const runProviderSync = () => {
-    const target = selectedSyncTarget;
-    const label = target || syncSnapshot?.currentProvider || "当前配置";
-    const pending = syncSnapshot
-      ? syncSnapshot.rolloutRewriteNeeded + syncSnapshot.sqliteProviderRowsNeedingSync
-      : 0;
-    if (!syncConfirming) {
-      setSyncConfirming(true);
-      onMessage(`请再次确认同步：目标 ${label}，预计影响 ${pending} 项。`);
-      return;
-    }
+    if (
+      !syncSnapshot
+      || syncBusyRef.current
+      || syncRefreshRef.current
+      || syncLoadState !== "ready"
+      || dialogSyncPending(syncSnapshot) <= 0
+    ) return;
+    syncBusyRef.current = true;
     setSyncBusy(true);
-    setSyncConfirming(false);
     onProgress("正在同步对话");
-    onMessage(`正在同步对话：${label}`);
-    const args = target ? { request: { targetProvider: target } } : undefined;
-    callBackend<string>("sync_provider_sessions", args)
-      .then((message) => {
-        onMessage(message);
-        refreshProviderSync(target || undefined);
-        onRefresh();
+    onMessage("正在把全部对话同步到当前 Provider");
+    const action = currentProviderSyncCommand();
+    runDialogSyncCycle(
+      () => callBackend<string>(action.command),
+      () => action.refreshScope === "dialog-sync" ? refreshProviderSync() : Promise.resolve(),
+    )
+      .then(({ syncResult, syncError, refreshError }) => {
+        if (syncResult) onMessage(syncResult);
+        if (syncError) onMessage(`同步对话失败：${String(syncError)}`);
+        if (refreshError) onMessage(`刷新对话同步状态失败：${String(refreshError)}`);
       })
-      .catch((error) => onMessage(`同步对话失败：${String(error)}`))
       .finally(() => {
+        syncBusyRef.current = false;
         setSyncBusy(false);
         onProgress("");
       });
   };
 
-  const providerOptions = syncSnapshot?.availableProviders ?? [];
-  const customTargetSelected = syncTarget === "__custom";
-  const syncPending = syncSnapshot
-    ? syncSnapshot.rolloutRewriteNeeded + syncSnapshot.sqliteProviderRowsNeedingSync
-    : 0;
-  const syncStatusTitle = !syncSnapshot
-    ? "尚未检查历史会话"
+  const syncPending = syncSnapshot ? dialogSyncPending(syncSnapshot) : 0;
+  const syncAction = dialogSyncAction(syncSnapshot, syncBusy, syncLoadState);
+  const syncStatusTitle = syncLoadState === "loading"
+    ? "正在检查历史会话"
+    : syncLoadState === "failed"
+    ? "无法检查历史会话"
+    : !syncSnapshot
+      ? "正在检查历史会话"
     : syncPending > 0
       ? "历史会话需要同步"
       : "历史会话记录一致";
-  const syncStatusDetail = !syncSnapshot
-    ? "选择目标归属后预览影响，再决定是否同步。"
+  const syncStatusDetail = syncLoadState === "loading"
+    ? "正在读取当前 Provider 和本机对话记录。"
+    : syncLoadState === "failed"
+    ? "检查暂时失败，请重新检查。"
+    : !syncSnapshot
+      ? "正在读取当前 Provider 和本机对话记录。"
     : syncPending > 0
       ? `预计更新 ${syncSnapshot.rolloutRewriteNeeded} 个原始会话文件、${syncSnapshot.sqliteProviderRowsNeedingSync} 条本地索引记录。`
       : `${syncSnapshot.rolloutFiles} 个原始会话文件、${syncSnapshot.sqliteRows} 条本地索引记录已对齐。`;
@@ -291,44 +312,6 @@ export function RecycleBinView({
     Boolean(zipInspect) &&
     Boolean(zipImportMode) &&
     (zipImportMode !== "overwrite" || zipOverwriteConfirm);
-
-  const syncAction = (() => {
-    if (syncBusy) {
-      return (
-        <button className="primary" disabled type="button">
-          <RefreshCw size={16} />
-          同步中
-        </button>
-      );
-    }
-    if (syncConfirming) {
-      return (
-        <div className="syncActionGroup">
-          <button className="primary" onClick={runProviderSync} type="button">
-            <RefreshCw size={16} />
-            确认同步
-          </button>
-          <button className="secondary" onClick={() => setSyncConfirming(false)} type="button">
-            取消
-          </button>
-        </div>
-      );
-    }
-    if (syncPending <= 0) {
-      return (
-        <button className="secondary" disabled type="button">
-          <CheckCircle2 size={16} />
-          无需同步
-        </button>
-      );
-    }
-    return (
-      <button className="primary" onClick={runProviderSync} type="button">
-        <RefreshCw size={16} />
-        同步
-      </button>
-    );
-  })();
 
   return (
     <div className="sessionsLayout">
@@ -548,65 +531,33 @@ export function RecycleBinView({
           <History size={16} />
           <h2>对话同步</h2>
         </div>
-        <div className="buttonRow">
-          <button className="secondary" disabled={syncInspecting} onClick={inspectProviderSync} type="button">
-            <RefreshCw size={16} />
-            {syncInspecting ? "检查中" : "预览影响"}
-          </button>
-        </div>
       </div>
       <div className="syncTool">
-        <div className={`syncControls ${customTargetSelected ? "customMode" : ""}`}>
-          <label>
-            <span>目标 Provider</span>
-            {customTargetSelected ? (
-              <div className="syncFieldRow">
-                <input
-                  value={customSyncTarget}
-                  onChange={(event) => setCustomSyncTarget(event.target.value)}
-                  placeholder="provider-name"
-                />
-                <button
-                  className="secondary"
-                  onClick={() => {
-                    setCustomSyncTarget("");
-                    setSyncTarget(syncSnapshot?.currentProvider ?? providerOptions[0] ?? "");
-                  }}
-                  type="button"
-                >
-                  选择预设
-                </button>
-              </div>
-            ) : (
-              <div className="syncFieldRow">
-                <select value={syncTarget} onChange={(event) => setSyncTarget(event.target.value)}>
-                  {!syncTarget && <option value="">当前配置</option>}
-                  {providerOptions.map((provider) => (
-                    <option key={provider} value={provider}>{provider}</option>
-                  ))}
-                  <option value="__custom">自定义</option>
-                </select>
-              </div>
-            )}
-            <span className="fieldHint">将历史对话统一到这个 Provider；操作前可先预览影响。</span>
-          </label>
-        </div>
-        <div className={`syncStatusCard ${syncPending > 0 ? "needsSync" : "ok"}`}>
+        <div className={`syncStatusCard ${syncAction.kind}`}>
           <div className="syncStatusMain">
             <div className="syncStatusCopy">
               <span className="syncStatusIcon">
-                {syncPending > 0 ? <RefreshCw size={16} /> : <CheckCircle2 size={16} />}
+                {syncAction.kind === "synced" ? <CheckCircle2 size={16} /> : <RefreshCw size={16} />}
               </span>
               <div>
                 <strong>{syncStatusTitle}</strong>
                 <p>{syncStatusDetail}</p>
               </div>
             </div>
-            {syncAction}
+            <button
+              className={syncAction.kind === "ready" ? "primary" : "secondary"}
+              disabled={syncAction.disabled}
+              onClick={syncAction.kind === "failed"
+                ? () => requestProviderSyncRefresh("manual")
+                : runProviderSync}
+              type="button"
+            >
+              {syncAction.kind === "synced" ? <CheckCircle2 size={16} /> : <RefreshCw size={16} />}
+              {syncAction.label}
+            </button>
           </div>
           <dl>
-            <Metric label="目标归属" value={selectedSyncTarget || syncSnapshot?.targetProvider || "-"} />
-            <Metric label="当前配置" value={syncSnapshot?.currentProvider ?? "-"} />
+            <Metric label="当前 Provider" value={syncSnapshot?.currentProvider ?? "-"} />
           </dl>
         </div>
         <details className="syncDetails">
@@ -659,10 +610,4 @@ function schemaLabel(schema: string) {
   if (schema === "codex_threads") return "Codex 对话";
   if (schema === "generic_sessions") return "旧版会话";
   return schema || "未知";
-}
-
-function providerSyncSummary(snapshot: ProviderSyncSnapshot) {
-  const pending = snapshot.rolloutRewriteNeeded + snapshot.sqliteProviderRowsNeedingSync;
-  if (pending > 0) return `预计影响 ${pending} 项`;
-  return "历史会话记录一致";
 }

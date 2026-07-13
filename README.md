@@ -68,7 +68,7 @@ macOS 当前包未做 Apple Developer ID 签名和公证。如果系统提示无
 
 ### 对话同步
 
-当 ccSwitch 或其他工具切换 `~/.codex/config.toml` 里的 `model_provider` 后，历史会话可能因为 Provider 元数据不一致而不可见或分组异常。CodexPilot 不会自动改写历史数据；你可以在“对话维护”里先预览影响范围，再手动把会话归属同步到当前配置或手动指定的 Provider。
+当 ccSwitch 或其他工具切换 `~/.codex/config.toml` 里的 `model_provider` 后，历史会话可能因为 Provider 元数据不一致而不可见或分组异常。进入“对话维护”，点击“同步全部对话”，CodexPilot 会自动读取当前 Provider，并把本机普通与归档历史会话统一过去。切换 Provider 后需要时再点一次；CodexPilot 不会在后台自动改写历史数据。
 
 ![CodexPilot 对话维护页面](docs/images/readme-dialog-maintenance.png)
 

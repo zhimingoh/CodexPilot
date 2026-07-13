@@ -58,9 +58,9 @@ Timeline only reads the current page content. It does not write session files, s
 
 ## Dialog Sync
 
-After ccSwitch or another tool changes `model_provider` in `~/.codex/config.toml`, old sessions may be hidden or grouped incorrectly because their `model_provider` metadata differs. CodexPilot no longer rewrites historical session ownership automatically. To make historical sessions visible or grouped under the current config Provider, open Dialog Maintenance, use Dialog Sync, preview the impact, then sync. For special migrations, you can still enter a manual target Provider.
+After ccSwitch or another tool changes `model_provider` in `~/.codex/config.toml`, old sessions may be hidden or grouped incorrectly because their `model_provider` metadata differs. To normalize the history, open Dialog Maintenance and click `Sync All Dialogs`. CodexPilot reads the current configured Provider when the operation runs and assigns all local active and archived history to it; there is no target selection, impact-preview step, or second confirmation.
 
-If you are only switching Providers temporarily, or if the previewed impact is unclear, do not sync yet. Use this only when historical sessions are missing or grouped incorrectly and you are sure you want those records assigned to the target Provider.
+Sync remains an explicit maintenance action. It does not run automatically after a Provider switch, configuration save, desktop-host launch, or page refresh. After switching Providers, click `Sync All Dialogs` again when the full local history should follow the new current Provider.
 
 Sync scope:
 
