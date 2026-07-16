@@ -6,6 +6,10 @@ MANAGER_DIR="$ROOT_DIR/apps/codex-pilot-manager"
 TARGET_TRIPLE="${TARGET_TRIPLE:-$(rustc -vV | awk '/host:/ { print $2 }')}"
 PROFILE="${PROFILE:-release}"
 VERSION="${VERSION:-$(awk -F\" '/"version"/ { print $4; exit }' "$MANAGER_DIR/src-tauri/tauri.conf.json")}"
+DMG_LOCALE="${CODEXPILOT_DMG_LOCALE:-en_US.UTF-8}"
+
+export LANG="$DMG_LOCALE"
+export LC_ALL="$DMG_LOCALE"
 
 if [[ "$TARGET_TRIPLE" != *"apple-darwin" ]]; then
   echo "当前脚本只用于 macOS 打包，检测到 target：$TARGET_TRIPLE" >&2

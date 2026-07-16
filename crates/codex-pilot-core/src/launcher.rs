@@ -340,14 +340,16 @@ pub async fn is_codex_process_running() -> bool {
 fn detect_codex_process_running() -> bool {
     #[cfg(target_os = "macos")]
     {
-        let mut command = crate::windows_integration::std_command("pgrep");
-        command
-            .args(["-x", "Codex"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        crate::windows_integration::status_hidden(&mut command)
-            .map(|status| status.success())
-            .unwrap_or(false)
+        macos_codex_process_names().iter().any(|process_name| {
+            let mut command = crate::windows_integration::std_command("pgrep");
+            command
+                .args(["-x", process_name])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            crate::windows_integration::status_hidden(&mut command)
+                .map(|status| status.success())
+                .unwrap_or(false)
+        })
     }
     #[cfg(target_os = "windows")]
     {
@@ -408,6 +410,11 @@ async fn inject_bridge(debug_port: u16, helper_port: u16, script: &str) -> anyho
     .await
 }
 
+#[cfg(target_os = "macos")]
+fn macos_codex_process_names() -> &'static [&'static str] {
+    &["Codex", "ChatGPT"]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -431,5 +438,12 @@ mod tests {
         };
 
         assert_eq!(options.debug_port, 9688);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_process_detection_includes_chatgpt_host() {
+        assert!(macos_codex_process_names().contains(&"Codex"));
+        assert!(macos_codex_process_names().contains(&"ChatGPT"));
     }
 }

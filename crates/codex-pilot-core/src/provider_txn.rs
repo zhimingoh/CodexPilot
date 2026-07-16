@@ -466,14 +466,9 @@ pub fn read_current_mode() -> anyhow::Result<ProviderModeReading> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
 
     fn test_guard() -> std::sync::MutexGuard<'static, ()> {
-        static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
-        GUARD
-            .get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        crate::app_paths::test_paths_guard()
     }
 
     fn unique_temp_dir(name: &str) -> PathBuf {

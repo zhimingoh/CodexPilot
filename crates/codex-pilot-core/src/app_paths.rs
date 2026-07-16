@@ -9,6 +9,9 @@ static TEST_APP_STATE_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 #[cfg(test)]
 static TEST_CODEX_HOME_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 
+#[cfg(test)]
+static TEST_PATHS_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
 pub fn codex_home_dir() -> PathBuf {
     #[cfg(test)]
     if let Some(path) = TEST_CODEX_HOME_DIR
@@ -73,6 +76,14 @@ pub fn set_test_codex_home_dir(path: Option<PathBuf>) {
     }
 }
 
+#[cfg(test)]
+pub fn test_paths_guard() -> std::sync::MutexGuard<'static, ()> {
+    TEST_PATHS_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 pub fn resolve_codex_app_dir(app_dir: Option<&Path>) -> Option<PathBuf> {
     if let Some(app_dir) = app_dir {
         return Some(app_dir.to_path_buf());
@@ -107,7 +118,7 @@ pub fn find_macos_codex_app_default() -> Option<PathBuf> {
 pub fn find_macos_codex_app(search_roots: &[PathBuf]) -> Option<PathBuf> {
     for root in search_roots {
         for candidate in macos_app_candidates(root) {
-            if candidate.is_dir() {
+            if is_macos_codex_app(&candidate) {
                 return Some(candidate);
             }
         }
@@ -170,10 +181,27 @@ fn macos_app_candidates(root: &Path) -> Vec<PathBuf> {
     if root.extension() == Some(OsStr::new("app")) {
         return vec![root.to_path_buf()];
     }
-    ["Codex.app", "OpenAI Codex.app", "OpenAI.Codex.app"]
+    ["Codex.app", "OpenAI Codex.app", "OpenAI.Codex.app", "ChatGPT.app"]
         .into_iter()
         .map(|name| root.join(name))
         .collect()
+}
+
+fn is_macos_codex_app(path: &Path) -> bool {
+    if !path.is_dir() {
+        return false;
+    }
+    if matches!(
+        path.file_name().and_then(OsStr::to_str),
+        Some("Codex.app" | "OpenAI Codex.app" | "OpenAI.Codex.app")
+    ) {
+        return true;
+    }
+    let info_plist = path.join("Contents").join("Info.plist");
+    std::fs::read_to_string(info_plist).is_ok_and(|contents| {
+        contents.contains("<string>com.openai.codex</string>")
+            || contents.contains("<string>Codex</string>")
+    })
 }
 
 fn version_tuple(path: &Path) -> Option<Vec<u32>> {
@@ -186,4 +214,41 @@ fn version_tuple(path: &Path) -> Option<Vec<u32>> {
         .collect::<Result<Vec<_>, _>>()
         .ok()?;
     if parts.is_empty() { None } else { Some(parts) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        std::env::temp_dir().join(format!(
+            "codex-pilot-app-paths-{name}-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ))
+    }
+
+    #[test]
+    fn macos_detector_accepts_chatgpt_app_with_codex_bundle_id() {
+        let root = unique_temp_dir("chatgpt-codex");
+        let app = root.join("ChatGPT.app");
+        std::fs::create_dir_all(app.join("Contents")).unwrap();
+        std::fs::write(
+            app.join("Contents/Info.plist"),
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.openai.codex</string>
+</dict>
+</plist>
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(find_macos_codex_app(&[root.clone()]), Some(app));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
