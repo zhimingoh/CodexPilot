@@ -519,7 +519,7 @@ mod tests {
     use super::*;
 
     fn test_guard() -> std::sync::MutexGuard<'static, ()> {
-        crate::app_paths::test_dirs_guard()
+        crate::app_paths::test_paths_guard()
     }
 
     fn unique_temp_dir(name: &str) -> PathBuf {

@@ -10,7 +10,7 @@ static TEST_APP_STATE_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 static TEST_CODEX_HOME_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 
 #[cfg(test)]
-static TEST_DIRS_GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+static TEST_PATHS_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum DesktopHostKind {
@@ -106,11 +106,11 @@ pub fn set_test_codex_home_dir(path: Option<PathBuf>) {
 }
 
 #[cfg(test)]
-pub(crate) fn test_dirs_guard() -> std::sync::MutexGuard<'static, ()> {
-    TEST_DIRS_GUARD
+pub fn test_paths_guard() -> std::sync::MutexGuard<'static, ()> {
+    TEST_PATHS_LOCK
         .get_or_init(|| Mutex::new(()))
         .lock()
-        .unwrap()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 pub fn resolve_codex_app_dir(app_dir: Option<&Path>) -> Option<PathBuf> {
@@ -204,7 +204,7 @@ pub fn find_macos_codex_app(search_roots: &[PathBuf]) -> Option<PathBuf> {
 pub fn find_macos_codex_host(search_roots: &[PathBuf]) -> Option<ResolvedDesktopHost> {
     for root in search_roots {
         for candidate in macos_app_candidates(root) {
-            if candidate.is_dir() {
+            if is_macos_codex_app(&candidate) {
                 return resolve_host_from_path(&candidate);
             }
         }
@@ -308,6 +308,23 @@ fn executable_host_kind(path: &Path) -> Option<DesktopHostKind> {
     }
 }
 
+fn is_macos_codex_app(path: &Path) -> bool {
+    if !path.is_dir() {
+        return false;
+    }
+    if matches!(
+        path.file_name().and_then(OsStr::to_str),
+        Some("Codex.app" | "OpenAI Codex.app" | "OpenAI.Codex.app")
+    ) {
+        return true;
+    }
+    let info_plist = path.join("Contents").join("Info.plist");
+    std::fs::read_to_string(info_plist).is_ok_and(|contents| {
+        contents.contains("<string>com.openai.codex</string>")
+            || contents.contains("<string>Codex</string>")
+    })
+}
+
 fn version_tuple(path: &Path) -> Option<Vec<u32>> {
     let name = path.file_name()?.to_str()?;
     let rest = name.strip_prefix("OpenAI.Codex_")?;
@@ -400,5 +417,29 @@ mod tests {
 
         assert_eq!(host.kind, DesktopHostKind::LegacyCodex);
         assert_eq!(host.app_dir, latest);
+    }
+
+    #[test]
+    fn macos_detector_accepts_chatgpt_app_with_codex_bundle_id() {
+        let root = tempfile::tempdir().unwrap();
+        let app = root.path().join("ChatGPT.app");
+        std::fs::create_dir_all(app.join("Contents")).unwrap();
+        std::fs::write(
+            app.join("Contents/Info.plist"),
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.openai.codex</string>
+</dict>
+</plist>
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            find_macos_codex_app(&[root.path().to_path_buf()]),
+            Some(app)
+        );
     }
 }

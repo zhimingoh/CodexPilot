@@ -357,10 +357,10 @@ pub async fn is_codex_process_running() -> bool {
 fn detect_codex_process_running() -> bool {
     #[cfg(target_os = "macos")]
     {
-        ["Codex", "ChatGPT"].into_iter().any(|name| {
+        macos_codex_process_names().iter().any(|process_name| {
             let mut command = crate::windows_integration::std_command("pgrep");
             command
-                .args(["-x", name])
+                .args(["-x", process_name])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null());
             crate::windows_integration::status_hidden(&mut command)
@@ -424,6 +424,11 @@ async fn inject_bridge(debug_port: u16, helper_port: u16, script: &str) -> anyho
         &[script.to_string()],
     )
     .await
+}
+
+#[cfg(target_os = "macos")]
+fn macos_codex_process_names() -> &'static [&'static str] {
+    &["Codex", "ChatGPT"]
 }
 
 #[cfg(test)]
@@ -490,6 +495,13 @@ ChatGPT.exe                   1224 Console                    1    100,000 K
 "#;
 
         assert!(process_list_contains_supported_host(output));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_process_detection_includes_chatgpt_host() {
+        assert!(macos_codex_process_names().contains(&"Codex"));
+        assert!(macos_codex_process_names().contains(&"ChatGPT"));
     }
 }
 
