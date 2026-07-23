@@ -46,8 +46,11 @@ try {
   & $npmCmd.Source @tauriArgs
 
   $bundleRoot = Join-Path $RootDir "target\$TargetTriple\$TargetProfileDir\bundle"
-  $nsisInstaller = Get-ChildItem -Path (Join-Path $bundleRoot "nsis") -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-  $msiInstaller = Get-ChildItem -Path (Join-Path $bundleRoot "msi") -Filter "*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
+  $nsisInstaller = Get-ChildItem -Path (Join-Path $bundleRoot "nsis") -Filter "CodexPilot_$($Version)_*_setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $nsisInstaller) {
+    $nsisInstaller = Get-ChildItem -Path (Join-Path $bundleRoot "nsis") -Filter "CodexPilot_$($Version)_*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+  }
+  $msiInstaller = Get-ChildItem -Path (Join-Path $bundleRoot "msi") -Filter "*$Version*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
 
   if (-not $nsisInstaller -and -not $msiInstaller) {
     throw "Tauri build completed, but no Windows installer was found under $bundleRoot"

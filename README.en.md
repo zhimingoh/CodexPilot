@@ -20,7 +20,7 @@
   <a href="Cargo.toml"><img alt="Rust workspace" src="https://img.shields.io/badge/Rust-workspace-b7410e" /></a>
 </p>
 
-CodexPilot is for people who already use Codex App locally. It provides a local manager and connects to running Codex pages through Chromium DevTools Protocol. Use it to launch Codex, unlock plugin entry, export sessions, manage the recycle bin, run dialog sync, and inspect diagnostics, without modifying Codex App's installed files or replacing the app.
+CodexPilot is for people who already use Codex workflows locally. It provides a local manager and connects to a supported desktop host through Chromium DevTools Protocol. Current builds target the Codex workflow inside the ChatGPT desktop app and still support the legacy standalone Codex host where it is present. Use it to launch the desktop host, unlock plugin entry where supported, export sessions, manage the recycle bin, run dialog sync, and inspect diagnostics, without modifying installed app files or replacing the host app.
 
 > CodexPilot is unofficial and is not affiliated with OpenAI or Codex App.
 
@@ -31,8 +31,8 @@ CodexPilot is for people who already use Codex App locally. It provides a local 
 1. Open [GitHub Releases](https://github.com/hl9565/CodexPilot/releases) and download the package for your platform from the Assets section. Do not use the Source code archive as an installer.
    - Windows: download `CodexPilot-*-windows-x64-setup.exe` and run the installer.
    - macOS Apple Silicon: if the release provides `CodexPilot-*-macos-arm64.dmg`, open it and drag `CodexPilot.app` into Applications.
-2. Open the CodexPilot manager, go to Launch, confirm the Codex path, and click Launch.
-3. After Codex opens, use the CodexPilot menu to export the current session, or use the Fast control in the Pilot pill to choose the service tier.
+2. Open the CodexPilot manager, go to Launch, confirm the desktop host path, and click Launch. Leave the path empty for automatic discovery, or point it at `ChatGPT.exe`, `ChatGPT.app`, or a legacy Codex app path.
+3. After the Codex workflow opens, use the CodexPilot menu to export the current session, or use the Fast control in the Pilot pill to choose the service tier when the current host exposes the required request dispatcher.
 4. To maintain historical sessions, use Dialog Maintenance for recycle bin cleanup or to run Dialog Sync.
 
 Current macOS packages are not signed with an Apple Developer ID and are not notarized. If macOS cannot verify the app, read the note inside the DMG before using the bundled helper script.
@@ -43,9 +43,9 @@ macOS Intel builds are not currently published as verified release assets. If yo
 
 ### Plugin Unlock Without Login
 
-The Launch page includes `Plugin Entry Unlock` and `Force Plugin Install` under Page Enhancements. When you use API-key mode without ChatGPT login, CodexPilot can unlock the native plugin entry inside Codex and re-enable install buttons that were disabled by `App unavailable`.
+The Launch page includes `Plugin Entry Unlock` and `Force Plugin Install` under Page Enhancements. When the current desktop host exposes the legacy Codex plugin UI, CodexPilot can unlock the native plugin entry and re-enable install buttons that were disabled by `App unavailable`.
 
-This only changes the current running Codex page. It does not take over Provider switching, and it does not require a CodexPilot-managed Provider flow in `~/.codex/config.toml`.
+This only changes the current injected page. It does not take over Provider switching, and it does not require a CodexPilot-managed Provider flow in `~/.codex/config.toml`. If ChatGPT desktop no longer exposes a matching internal hook, the enhancement is skipped and diagnostics record the unavailable hook.
 
 ![CodexPilot page enhancements and plugin unlock](docs/images/readme-launch.png)
 
@@ -55,7 +55,7 @@ After unlock succeeds, the native Codex sidebar shows `Plugins - Unlocked` direc
 
 ### Global Fast And Per-Dialog Fast
 
-The Launch page includes `Global Fast` under Page Enhancements, and it is enabled by default. When enabled, CodexPilot rewrites all dialog requests to the Fast (`priority`) service tier, which fits workflows where lower waiting time should be the default.
+The Launch page includes `Global Fast` under Page Enhancements, and it is enabled by default. When the injected desktop host exposes the request dispatcher CodexPilot knows how to patch, CodexPilot rewrites dialog requests to the Fast (`priority`) service tier. If the dispatcher is unavailable in a newer ChatGPT desktop build, CodexPilot leaves the bridge running and reports Fast as unavailable instead of breaking injection.
 
 ![CodexPilot global Fast pill state](docs/images/readme-fast-global.png)
 

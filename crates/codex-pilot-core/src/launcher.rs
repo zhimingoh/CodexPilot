@@ -77,8 +77,8 @@ where
 }
 
 pub async fn launch_and_inject(options: LaunchOptions) -> anyhow::Result<()> {
-    let app_dir = crate::app_paths::resolve_codex_app_dir(options.app_dir.as_deref())
-        .ok_or_else(|| anyhow::anyhow!("Codex App directory not found"))?;
+    let host = crate::app_paths::resolve_codex_host(options.app_dir.as_deref())
+        .ok_or_else(|| anyhow::anyhow!("Codex or ChatGPT desktop host not found"))?;
     let debug_port = options.debug_port;
     crate::status::clear_status()?;
     if helper_status(options.helper_port).await.is_ok() {
@@ -100,7 +100,8 @@ pub async fn launch_and_inject(options: LaunchOptions) -> anyhow::Result<()> {
         let _ = crate::diagnostic_log::append(
             "launcher.debug_port_available_reinject",
             serde_json::json!({
-                "app_dir": app_dir.to_string_lossy(),
+                "app_dir": host.app_dir.to_string_lossy(),
+                "host_kind": host.kind.label(),
                 "debug_port": debug_port,
                 "helper_port": helper_port
             }),
@@ -126,7 +127,8 @@ pub async fn launch_and_inject(options: LaunchOptions) -> anyhow::Result<()> {
         let _ = crate::diagnostic_log::append(
             "launcher.codex_running_without_debug_port",
             serde_json::json!({
-                "app_dir": app_dir.to_string_lossy(),
+                "app_dir": host.app_dir.to_string_lossy(),
+                "host_kind": host.kind.label(),
                 "debug_port": debug_port,
                 "helper_port": helper_port
             }),
@@ -144,19 +146,21 @@ pub async fn launch_and_inject(options: LaunchOptions) -> anyhow::Result<()> {
             }),
         );
         anyhow::bail!(
-            "调试端口 {debug_port} 已被占用，无法启动 Codex。请先关闭占用该端口的进程，或在启动设置里更换调试端口。"
+            "调试端口 {debug_port} 已被占用，无法启动桌面宿主。请先关闭占用该端口的进程，或在启动设置里更换调试端口。"
         );
     }
     let _ = crate::diagnostic_log::append(
         "launcher.start",
         serde_json::json!({
-            "app_dir": app_dir.to_string_lossy(),
+            "app_dir": host.app_dir.to_string_lossy(),
+            "host_kind": host.kind.label(),
+            "executable": host.executable.to_string_lossy(),
             "debug_port": debug_port,
             "helper_port": helper_port
         }),
     );
     let helper = crate::helper::start_helper(helper_port).await?;
-    let mut child = launch_codex(&app_dir, debug_port).await?;
+    let mut child = launch_host(&host, debug_port).await?;
     inject_running_codex(debug_port, helper_port).await?;
     crate::status::write_status(&crate::status::BackendStatus {
         status: "running".to_string(),
@@ -294,6 +298,19 @@ pub fn build_codex_command(app_dir: &Path, debug_port: u16) -> Vec<String> {
     command
 }
 
+pub fn build_host_command(
+    host: &crate::app_paths::ResolvedDesktopHost,
+    debug_port: u16,
+) -> Vec<String> {
+    if host.app_dir.extension().and_then(|value| value.to_str()) == Some("app") {
+        build_macos_open_command(&host.app_dir, debug_port)
+    } else {
+        let mut command = vec![host.executable.to_string_lossy().to_string()];
+        command.extend(build_codex_arguments(debug_port));
+        command
+    }
+}
+
 pub fn build_macos_open_command(app_dir: &Path, debug_port: u16) -> Vec<String> {
     let mut command = vec![
         "open".to_string(),
@@ -306,19 +323,19 @@ pub fn build_macos_open_command(app_dir: &Path, debug_port: u16) -> Vec<String> 
     command
 }
 
-async fn launch_codex(app_dir: &Path, debug_port: u16) -> anyhow::Result<Child> {
-    let command = if app_dir.extension().and_then(|value| value.to_str()) == Some("app") {
-        build_macos_open_command(app_dir, debug_port)
-    } else {
-        build_codex_command(app_dir, debug_port)
-    };
+async fn launch_host(
+    host: &crate::app_paths::ResolvedDesktopHost,
+    debug_port: u16,
+) -> anyhow::Result<Child> {
+    let command = build_host_command(host, debug_port);
     let executable = command
         .first()
-        .ok_or_else(|| anyhow::anyhow!("Codex launch command is empty"))?;
+        .ok_or_else(|| anyhow::anyhow!("desktop host launch command is empty"))?;
     let _ = crate::diagnostic_log::append(
         "launcher.spawn",
         serde_json::json!({
             "executable": executable,
+            "host_kind": host.kind.label(),
             "arg_count": command.len().saturating_sub(1)
         }),
     );
@@ -328,7 +345,7 @@ async fn launch_codex(app_dir: &Path, debug_port: u16) -> anyhow::Result<Child> 
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     crate::windows_integration::spawn_hidden(&mut process)
-        .with_context(|| format!("failed to launch Codex with {executable}"))
+        .with_context(|| format!("failed to launch desktop host with {executable}"))
 }
 
 pub async fn is_codex_process_running() -> bool {
@@ -340,24 +357,25 @@ pub async fn is_codex_process_running() -> bool {
 fn detect_codex_process_running() -> bool {
     #[cfg(target_os = "macos")]
     {
-        let mut command = crate::windows_integration::std_command("pgrep");
-        command
-            .args(["-x", "Codex"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        crate::windows_integration::status_hidden(&mut command)
-            .map(|status| status.success())
-            .unwrap_or(false)
+        ["Codex", "ChatGPT"].into_iter().any(|name| {
+            let mut command = crate::windows_integration::std_command("pgrep");
+            command
+                .args(["-x", name])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            crate::windows_integration::status_hidden(&mut command)
+                .map(|status| status.success())
+                .unwrap_or(false)
+        })
     }
     #[cfg(target_os = "windows")]
     {
         let mut command = crate::windows_integration::std_command("tasklist");
-        command
-            .args(["/FI", "IMAGENAME eq Codex.exe"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+        command.stdout(Stdio::piped()).stderr(Stdio::null());
         crate::windows_integration::output_hidden(&mut command)
-            .map(|output| String::from_utf8_lossy(&output.stdout).contains("Codex.exe"))
+            .map(|output| {
+                process_list_contains_supported_host(&String::from_utf8_lossy(&output.stdout))
+            })
             .unwrap_or(false)
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -423,6 +441,36 @@ mod tests {
     }
 
     #[test]
+    fn host_command_uses_chatgpt_executable_path() {
+        let host = crate::app_paths::ResolvedDesktopHost {
+            kind: crate::app_paths::DesktopHostKind::ChatGptUnified,
+            app_dir: Path::new("C:/Users/example/AppData/Local/ChatGPT").to_path_buf(),
+            executable: Path::new("C:/Users/example/AppData/Local/ChatGPT/ChatGPT.exe")
+                .to_path_buf(),
+        };
+
+        let command = build_host_command(&host, 9688);
+
+        assert_eq!(command[0], host.executable.to_string_lossy());
+        assert!(command.contains(&"--remote-debugging-port=9688".to_string()));
+    }
+
+    #[test]
+    fn host_command_uses_legacy_codex_executable_path() {
+        let host = crate::app_paths::ResolvedDesktopHost {
+            kind: crate::app_paths::DesktopHostKind::LegacyCodex,
+            app_dir: Path::new("C:/Program Files/WindowsApps/OpenAI.Codex/app").to_path_buf(),
+            executable: Path::new("C:/Program Files/WindowsApps/OpenAI.Codex/app/Codex.exe")
+                .to_path_buf(),
+        };
+
+        let command = build_host_command(&host, 9688);
+
+        assert_eq!(command[0], host.executable.to_string_lossy());
+        assert!(command.contains(&"--remote-debugging-port=9688".to_string()));
+    }
+
+    #[test]
     fn launch_options_keep_requested_debug_port() {
         let options = LaunchOptions {
             app_dir: None,
@@ -432,4 +480,23 @@ mod tests {
 
         assert_eq!(options.debug_port, 9688);
     }
+
+    #[test]
+    fn windows_process_detection_accepts_chatgpt_host() {
+        let output = r#"
+Image Name                     PID Session Name        Session#    Mem Usage
+========================= ======== ================ =========== ============
+ChatGPT.exe                   1224 Console                    1    100,000 K
+"#;
+
+        assert!(process_list_contains_supported_host(output));
+    }
+}
+
+fn process_list_contains_supported_host(output: &str) -> bool {
+    output.lines().map(str::trim).any(|line| {
+        line.starts_with("Codex.exe")
+            || line.starts_with("codex.exe")
+            || line.starts_with("ChatGPT.exe")
+    })
 }

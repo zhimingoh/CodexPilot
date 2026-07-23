@@ -5,6 +5,9 @@ export type BackendStatus = {
 
 export type LaunchSnapshot = {
   appPath: string | null;
+  hostKind: string | null;
+  hostLabel: string | null;
+  executablePath: string | null;
   requestedAppPath: string;
   debugPort: number;
   helperPort: number;

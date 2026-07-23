@@ -58,7 +58,7 @@ export function LaunchView({
 
   React.useEffect(() => {
     if (!launch) return;
-    setAppPath(launch.requestedAppPath || launch.appPath || "");
+    setAppPath(launch.requestedAppPath || launch.executablePath || launch.appPath || "");
     setDebugPort(String(launch.debugPort));
     setHelperPort(String(launch.helperPort));
     setAutoLaunchOnOpen(Boolean(launch.autoLaunchOnOpen));
@@ -129,7 +129,7 @@ export function LaunchView({
         </div>
         <dl className="metricGrid overviewMetrics">
           <Metric label="后端" value={backendState} />
-          <Metric label="Codex" value={launch?.codexRunning ? "已运行" : "未检测"} />
+          <Metric label={launch?.hostLabel || "Desktop host"} value={launch?.codexRunning ? "已运行" : "未检测"} />
           <Metric label="连接方式" value={connectionState} />
           <Metric label="调试端口" value={String(launch?.debugPort ?? "-")} />
         </dl>
@@ -144,11 +144,11 @@ export function LaunchView({
         </div>
         <div className="launchPreferences">
           <label className="preferenceField pathField">
-            <span>Codex 应用路径</span>
+            <span>Desktop host 路径</span>
             <input
               value={appPath}
               onChange={(event) => setAppPath(event.target.value)}
-              placeholder="/Applications/Codex.app"
+              placeholder="/Applications/ChatGPT.app 或 ChatGPT.exe"
             />
           </label>
           <div className="preferenceGrid">
@@ -179,7 +179,7 @@ export function LaunchView({
                   onChange={(event) => setAutoLaunchOnOpen(event.target.checked)}
                   type="checkbox"
                 />
-                <span>打开 CodexPilot 时自动启动或注入 Codex</span>
+                <span>打开 CodexPilot 时自动启动或注入 desktop host</span>
               </label>
               <label className="checkboxRow compactCheckbox">
                 <input
@@ -210,7 +210,7 @@ export function LaunchView({
           </div>
         </div>
         <p className="formHint enhancementIntro">
-          控制注入到 Codex 页面里的可见增强。关闭后不会影响对话维护、对话同步和诊断。
+          控制注入到 Codex 工作流页面里的可见增强。关闭后不会影响对话维护、对话同步和诊断。
         </p>
         <div className="enhancementList">
           <SwitchRow
@@ -279,7 +279,9 @@ export function LaunchView({
           </div>
         </div>
         <div className="rows">
-          <Row label="Codex 应用" value={launch?.appPath ?? "未发现"} />
+          <Row label="Desktop host" value={launch?.hostLabel ?? "未发现"} />
+          <Row label="应用目录" value={launch?.appPath ?? "未发现"} />
+          <Row label="执行文件" value={launch?.executablePath ?? "未发现"} />
           <Row label="偏好路径" value={launch?.requestedAppPath || "自动探测"} />
           <Row label="调试端口" value={String(launch?.debugPort ?? "-")} />
           <Row label="连接端口" value={String(launch?.helperPort ?? "-")} />

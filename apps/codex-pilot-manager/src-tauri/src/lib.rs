@@ -36,6 +36,9 @@ struct CodexProcessCache {
 #[serde(rename_all = "camelCase")]
 struct LaunchSnapshot {
     app_path: Option<String>,
+    host_kind: Option<String>,
+    host_label: Option<String>,
+    executable_path: Option<String>,
     requested_app_path: String,
     debug_port: u16,
     helper_port: u16,

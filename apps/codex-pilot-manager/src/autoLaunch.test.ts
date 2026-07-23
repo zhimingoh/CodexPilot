@@ -16,6 +16,7 @@ expectEqual(
     alreadyFailed: false,
     launching: false,
     codexInstalled: true,
+    hostLabel: "ChatGPT",
   }),
   { kind: "skip", markAttempted: false },
   "does not auto launch when the preference is off",
@@ -29,15 +30,16 @@ expectEqual(
     alreadyFailed: false,
     launching: false,
     codexInstalled: true,
+    hostLabel: "ChatGPT",
   }),
   {
     kind: "run",
     markAttempted: true,
     command: "launch_codex",
-    progress: "正在自动启动 Codex",
-    message: "正在自动启动 Codex",
+    progress: "正在自动启动 ChatGPT",
+    message: "正在自动启动 ChatGPT",
   },
-  "launches Codex when auto launch is enabled and state is safe",
+  "launches the resolved desktop host when auto launch is enabled and state is safe",
 );
 
 expectEqual(
@@ -48,6 +50,7 @@ expectEqual(
     alreadyFailed: false,
     launching: false,
     codexInstalled: true,
+    hostLabel: "ChatGPT",
   }),
   {
     kind: "run",
@@ -56,7 +59,7 @@ expectEqual(
     progress: "正在自动注入 CodexPilot",
     message: "正在自动注入 CodexPilot",
   },
-  "automatically injects into an already running Codex when state is safe",
+  "automatically injects into an already running host when state is safe",
 );
 
 expectEqual(
@@ -67,13 +70,14 @@ expectEqual(
     alreadyFailed: false,
     launching: false,
     codexInstalled: true,
+    hostLabel: "ChatGPT",
   }),
   {
     kind: "stop",
     markAttempted: true,
-    message: "Codex 已运行但没有调试端口，需要手动确认重启并注入",
+    message: "ChatGPT 已运行但没有调试端口，需要手动确认重启并注入",
   },
-  "does not restart an unrelated running Codex",
+  "does not restart an unrelated running host",
 );
 
 expectEqual(
@@ -84,6 +88,7 @@ expectEqual(
     alreadyFailed: false,
     launching: false,
     codexInstalled: true,
+    hostLabel: "ChatGPT",
   }),
   { kind: "skip", markAttempted: false },
   "does not run more than once per page load",
@@ -97,6 +102,7 @@ expectEqual(
     alreadyFailed: false,
     launching: true,
     codexInstalled: true,
+    hostLabel: "ChatGPT",
   }),
   { kind: "skip", markAttempted: false },
   "does not start a second launch while launch is in progress",
@@ -110,6 +116,7 @@ expectEqual(
     alreadyFailed: true,
     launching: false,
     codexInstalled: true,
+    hostLabel: "ChatGPT",
   }),
   { kind: "skip", markAttempted: false },
   "does not retry automatically after one failed auto action",
@@ -123,13 +130,14 @@ expectEqual(
     alreadyFailed: false,
     launching: false,
     codexInstalled: false,
+    hostLabel: "ChatGPT",
   }),
   {
     kind: "stop",
     markAttempted: true,
-    message: "未找到 Codex 安装或启动路径不可用，已跳过自动启动/注入",
+    message: "未找到 ChatGPT 安装或启动路径不可用，已跳过自动启动/注入",
   },
-  "does not auto launch when Codex is not installed",
+  "does not auto launch when the desktop host is not installed",
 );
 
 expectEqual(
@@ -140,6 +148,7 @@ expectEqual(
     alreadyFailed: false,
     launching: false,
     codexInstalled: true,
+    hostLabel: "ChatGPT",
   }),
   { kind: "skip", markAttempted: false },
   "skips without marking attempted while backend is launching",

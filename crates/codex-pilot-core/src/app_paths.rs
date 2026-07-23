@@ -9,6 +9,38 @@ static TEST_APP_STATE_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 #[cfg(test)]
 static TEST_CODEX_HOME_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 
+#[cfg(test)]
+static TEST_DIRS_GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum DesktopHostKind {
+    LegacyCodex,
+    ChatGptUnified,
+}
+
+impl DesktopHostKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::LegacyCodex => "legacy_codex",
+            Self::ChatGptUnified => "chatgpt_unified",
+        }
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::LegacyCodex => "Codex",
+            Self::ChatGptUnified => "ChatGPT",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ResolvedDesktopHost {
+    pub kind: DesktopHostKind,
+    pub app_dir: PathBuf,
+    pub executable: PathBuf,
+}
+
 pub fn codex_home_dir() -> PathBuf {
     #[cfg(test)]
     if let Some(path) = TEST_CODEX_HOME_DIR
@@ -73,20 +105,77 @@ pub fn set_test_codex_home_dir(path: Option<PathBuf>) {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn test_dirs_guard() -> std::sync::MutexGuard<'static, ()> {
+    TEST_DIRS_GUARD
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap()
+}
+
 pub fn resolve_codex_app_dir(app_dir: Option<&Path>) -> Option<PathBuf> {
+    resolve_codex_host(app_dir).map(|host| host.app_dir)
+}
+
+pub fn resolve_codex_host(app_dir: Option<&Path>) -> Option<ResolvedDesktopHost> {
     if let Some(app_dir) = app_dir {
-        return Some(app_dir.to_path_buf());
+        return resolve_host_from_path(app_dir);
     }
     if cfg!(target_os = "macos") {
-        find_macos_codex_app_default()
+        find_macos_codex_host_default()
     } else {
-        find_latest_codex_app_dir_default()
+        find_latest_codex_host_default()
     }
 }
 
+pub fn resolve_host_from_path(path: &Path) -> Option<ResolvedDesktopHost> {
+    if path.is_file() {
+        let kind = executable_host_kind(path)?;
+        return Some(ResolvedDesktopHost {
+            kind,
+            app_dir: path.parent().unwrap_or(path).to_path_buf(),
+            executable: path.to_path_buf(),
+        });
+    }
+    if path.extension() == Some(OsStr::new("app")) {
+        let executable = build_codex_executable(path);
+        return Some(ResolvedDesktopHost {
+            kind: if executable
+                .file_name()
+                .and_then(OsStr::to_str)
+                .is_some_and(|name| name.eq_ignore_ascii_case("ChatGPT"))
+            {
+                DesktopHostKind::ChatGptUnified
+            } else {
+                DesktopHostKind::LegacyCodex
+            },
+            app_dir: path.to_path_buf(),
+            executable,
+        });
+    }
+    let executable = build_codex_executable(path);
+    let kind = executable_host_kind(&executable)?;
+    Some(ResolvedDesktopHost {
+        kind,
+        app_dir: path.to_path_buf(),
+        executable,
+    })
+}
+
 pub fn build_codex_executable(app_dir: &Path) -> PathBuf {
+    if app_dir.is_file() {
+        return app_dir.to_path_buf();
+    }
     if app_dir.extension() == Some(OsStr::new("app")) {
+        let chatgpt = app_dir.join("Contents").join("MacOS").join("ChatGPT");
+        if chatgpt.exists() {
+            return chatgpt;
+        }
         return app_dir.join("Contents").join("MacOS").join("Codex");
+    }
+    let chatgpt = app_dir.join("ChatGPT.exe");
+    if chatgpt.exists() {
+        return chatgpt;
     }
     let upper = app_dir.join("Codex.exe");
     if upper.exists() {
@@ -97,18 +186,26 @@ pub fn build_codex_executable(app_dir: &Path) -> PathBuf {
 }
 
 pub fn find_macos_codex_app_default() -> Option<PathBuf> {
+    find_macos_codex_host_default().map(|host| host.app_dir)
+}
+
+pub fn find_macos_codex_host_default() -> Option<ResolvedDesktopHost> {
     let mut roots = vec![PathBuf::from("/Applications")];
     if let Some(home) = directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf()) {
         roots.push(home.join("Applications"));
     }
-    find_macos_codex_app(&roots)
+    find_macos_codex_host(&roots)
 }
 
 pub fn find_macos_codex_app(search_roots: &[PathBuf]) -> Option<PathBuf> {
+    find_macos_codex_host(search_roots).map(|host| host.app_dir)
+}
+
+pub fn find_macos_codex_host(search_roots: &[PathBuf]) -> Option<ResolvedDesktopHost> {
     for root in search_roots {
         for candidate in macos_app_candidates(root) {
             if candidate.is_dir() {
-                return Some(candidate);
+                return resolve_host_from_path(&candidate);
             }
         }
     }
@@ -116,9 +213,13 @@ pub fn find_macos_codex_app(search_roots: &[PathBuf]) -> Option<PathBuf> {
 }
 
 pub fn find_latest_codex_app_dir_default() -> Option<PathBuf> {
+    find_latest_codex_host_default().map(|host| host.app_dir)
+}
+
+pub fn find_latest_codex_host_default() -> Option<ResolvedDesktopHost> {
     #[cfg(windows)]
     {
-        find_latest_codex_app_dir_from_roots(&windows_app_package_roots())
+        find_latest_codex_host_from_roots(&windows_app_package_roots())
     }
 
     #[cfg(not(windows))]
@@ -128,16 +229,25 @@ pub fn find_latest_codex_app_dir_default() -> Option<PathBuf> {
 }
 
 pub fn find_latest_codex_app_dir_from_roots(roots: &[PathBuf]) -> Option<PathBuf> {
+    find_latest_codex_host_from_roots(roots).map(|host| host.app_dir)
+}
+
+pub fn find_latest_codex_host_from_roots(roots: &[PathBuf]) -> Option<ResolvedDesktopHost> {
     roots
         .iter()
-        .filter_map(|root| find_latest_codex_app_dir(root))
+        .filter_map(|root| find_latest_codex_host(root))
         .max_by(|left, right| {
-            version_tuple(left.parent().unwrap_or(left))
-                .cmp(&version_tuple(right.parent().unwrap_or(right)))
+            version_tuple(left.app_dir.parent().unwrap_or(&left.app_dir)).cmp(&version_tuple(
+                right.app_dir.parent().unwrap_or(&right.app_dir),
+            ))
         })
 }
 
 pub fn find_latest_codex_app_dir(root: &Path) -> Option<PathBuf> {
+    find_latest_codex_host(root).map(|host| host.app_dir)
+}
+
+pub fn find_latest_codex_host(root: &Path) -> Option<ResolvedDesktopHost> {
     let mut matches = std::fs::read_dir(root)
         .ok()?
         .filter_map(Result::ok)
@@ -148,7 +258,8 @@ pub fn find_latest_codex_app_dir(root: &Path) -> Option<PathBuf> {
     matches.sort_by(|left, right| left.0.cmp(&right.0));
     let (_, latest) = matches.pop()?;
     let app = latest.join("app");
-    Some(if app.is_dir() { app } else { latest })
+    let app_dir = if app.is_dir() { app } else { latest };
+    resolve_host_from_path(&app_dir)
 }
 
 #[cfg(windows)]
@@ -170,10 +281,31 @@ fn macos_app_candidates(root: &Path) -> Vec<PathBuf> {
     if root.extension() == Some(OsStr::new("app")) {
         return vec![root.to_path_buf()];
     }
-    ["Codex.app", "OpenAI Codex.app", "OpenAI.Codex.app"]
-        .into_iter()
-        .map(|name| root.join(name))
-        .collect()
+    [
+        "ChatGPT.app",
+        "OpenAI ChatGPT.app",
+        "OpenAI.ChatGPT.app",
+        "Codex.app",
+        "OpenAI Codex.app",
+        "OpenAI.Codex.app",
+    ]
+    .into_iter()
+    .map(|name| root.join(name))
+    .collect()
+}
+
+fn executable_host_kind(path: &Path) -> Option<DesktopHostKind> {
+    let name = path.file_name()?.to_str()?;
+    if name.eq_ignore_ascii_case("ChatGPT.exe") || name.eq_ignore_ascii_case("ChatGPT") {
+        Some(DesktopHostKind::ChatGptUnified)
+    } else if name.eq_ignore_ascii_case("Codex.exe")
+        || name.eq_ignore_ascii_case("codex.exe")
+        || name.eq_ignore_ascii_case("Codex")
+    {
+        Some(DesktopHostKind::LegacyCodex)
+    } else {
+        None
+    }
 }
 
 fn version_tuple(path: &Path) -> Option<Vec<u32>> {
@@ -186,4 +318,87 @@ fn version_tuple(path: &Path) -> Option<Vec<u32>> {
         .collect::<Result<Vec<_>, _>>()
         .ok()?;
     if parts.is_empty() { None } else { Some(parts) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_chatgpt_executable_resolves_as_unified_host() {
+        let temp = tempfile::tempdir().unwrap();
+        let exe = temp.path().join("ChatGPT.exe");
+        std::fs::write(&exe, "").unwrap();
+
+        let host = resolve_codex_host(Some(&exe)).expect("host should resolve");
+
+        assert_eq!(host.kind, DesktopHostKind::ChatGptUnified);
+        assert_eq!(host.executable, exe);
+        assert_eq!(host.app_dir, temp.path());
+    }
+
+    #[test]
+    fn chatgpt_directory_executable_is_preferred_when_present() {
+        let temp = tempfile::tempdir().unwrap();
+        let chatgpt = temp.path().join("ChatGPT.exe");
+        let codex = temp.path().join("Codex.exe");
+        std::fs::write(&chatgpt, "").unwrap();
+        std::fs::write(&codex, "").unwrap();
+
+        let host = resolve_codex_host(Some(temp.path())).expect("host should resolve");
+
+        assert_eq!(host.kind, DesktopHostKind::ChatGptUnified);
+        assert_eq!(host.executable, chatgpt);
+    }
+
+    #[test]
+    fn legacy_codex_directory_resolves_when_chatgpt_is_absent() {
+        let temp = tempfile::tempdir().unwrap();
+        let codex = temp.path().join("Codex.exe");
+        std::fs::write(&codex, "").unwrap();
+
+        let host = resolve_codex_host(Some(temp.path())).expect("host should resolve");
+
+        assert_eq!(host.kind, DesktopHostKind::LegacyCodex);
+        assert_eq!(host.executable, codex);
+    }
+
+    #[test]
+    fn finds_latest_chatgpt_app_dir_from_windows_roots() {
+        let temp = tempfile::tempdir().unwrap();
+        let old = temp
+            .path()
+            .join("OpenAI.Codex_1.0.0.0_x64__abc")
+            .join("app");
+        let latest = temp
+            .path()
+            .join("OpenAI.Codex_2.0.0.0_x64__abc")
+            .join("app");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&latest).unwrap();
+        std::fs::write(latest.join("ChatGPT.exe"), "").unwrap();
+
+        let host = find_latest_codex_host_from_roots(&[temp.path().to_path_buf()])
+            .expect("host should resolve");
+
+        assert_eq!(host.kind, DesktopHostKind::ChatGptUnified);
+        assert_eq!(host.app_dir, latest);
+    }
+
+    #[test]
+    fn finds_latest_legacy_codex_app_dir_from_windows_roots() {
+        let temp = tempfile::tempdir().unwrap();
+        let latest = temp
+            .path()
+            .join("OpenAI.Codex_3.0.0.0_x64__abc")
+            .join("app");
+        std::fs::create_dir_all(&latest).unwrap();
+        std::fs::write(latest.join("Codex.exe"), "").unwrap();
+
+        let host = find_latest_codex_host_from_roots(&[temp.path().to_path_buf()])
+            .expect("host should resolve");
+
+        assert_eq!(host.kind, DesktopHostKind::LegacyCodex);
+        assert_eq!(host.app_dir, latest);
+    }
 }

@@ -301,11 +301,34 @@ pub(crate) async fn activate_provider_profile(
 ) -> Result<ProviderSnapshot, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut store = load_provider_profiles();
-        if !store.profiles.iter().any(|p| p.id == profile_id) {
-            return Err(format!("未找到 profile：{profile_id}"));
-        }
+        let profile = store
+            .profiles
+            .iter()
+            .find(|profile| profile.id == profile_id)
+            .cloned()
+            .ok_or_else(|| format!("未找到 profile：{profile_id}"))?;
+        let reading = provider_txn::read_current_mode().map_err(|e| e.to_string())?;
+        let current_mode = if reading.owned_by_codex_pilot {
+            reading.mode
+        } else {
+            None
+        };
+
         store.active_profile_id = profile_id;
-        save_provider_profiles(&store)?;
+        let profiles_json =
+            serde_json::to_vec_pretty(&store).map_err(|e| format!("序列化失败：{e}"))?;
+        let helper_port = crate::launch_settings::load_launch_preferences().helper_port;
+        ProviderTxn::begin()
+            .map_err(|e| e.to_string())?
+            .commit_profile_activation(
+                &profiles_json,
+                current_mode,
+                &profile.base_url,
+                &profile.bearer_token,
+                parse_upstream_protocol(&profile.upstream_protocol),
+                helper_port,
+            )
+            .map_err(|e| e.to_string())?;
 
         let reading = provider_txn::read_current_mode().map_err(|e| e.to_string())?;
         let (chatgpt_authenticated, chatgpt_account_label) = chatgpt_auth_status();

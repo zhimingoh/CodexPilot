@@ -14,9 +14,9 @@ This guide explains what each CodexPilot page does, which local data it reads or
 
 ## Launch And Injection
 
-CodexPilot starts Codex through a local launcher and connects to the renderer through Chromium DevTools Protocol. After injection succeeds, a CodexPilot action menu appears inside Codex.
+CodexPilot starts a supported desktop host through a local launcher and connects to the renderer through Chromium DevTools Protocol. Current builds support the Codex workflow inside ChatGPT desktop and retain compatibility with the legacy standalone Codex host. After injection succeeds, a CodexPilot action menu appears inside the selected page.
 
-If Codex is already running through another path, the manager will suggest re-injection or restart based on the current state. Restarting asks for confirmation first so unsaved input is not closed unexpectedly.
+If ChatGPT or legacy Codex is already running through another path, the manager will suggest re-injection or restart based on the current state. Restarting asks for confirmation first so unsaved input is not closed unexpectedly.
 
 The Launch page also includes Page Enhancement switches for visible injected features:
 
@@ -26,9 +26,9 @@ The Launch page also includes Page Enhancement switches for visible injected fea
 - Plugin Entry Unlock
 - Force Plugin Install
 
-`Plugin Entry Unlock` is meant for API-key usage without ChatGPT login. When enabled, CodexPilot unlocks the native plugin entry in the current Codex page. `Force Plugin Install` re-enables certain install buttons that were disabled by `App unavailable`.
+`Plugin Entry Unlock` is meant for API-key usage without ChatGPT login on hosts that still expose the legacy Codex plugin UI. When enabled, CodexPilot unlocks the native plugin entry in the current page. `Force Plugin Install` re-enables certain install buttons that were disabled by `App unavailable`.
 
-These enhancements only affect the injected page behavior for the current running Codex instance. They do not replace ccSwitch, and they do not manage Provider switching or API keys in `~/.codex/config.toml`.
+These enhancements only affect the injected page behavior for the current running desktop host. They do not replace ccSwitch, and they do not manage Provider switching or API keys in `~/.codex/config.toml`. Page-specific hooks that are missing in a newer ChatGPT desktop build are skipped and reported through diagnostics.
 
 ![CodexPilot page enhancements and plugin unlock](images/readme-launch.png)
 
@@ -83,9 +83,10 @@ The manager shows checks for launch, injection, dialog sync, and page connection
 
 Diagnostics are mainly used to check:
 
-- whether the Codex app path is usable;
+- whether the desktop host path is usable and which host kind was selected;
 - whether the debug port and helper port are healthy;
 - whether the page has connected and injection has completed;
+- whether page-specific hooks such as the Fast dispatcher are available;
 - whether local data required by dialog maintenance and dialog sync is accessible.
 
 ## Local Data And Security
@@ -109,4 +110,4 @@ Additional data locations:
 
 ## Compatibility
 
-CodexPilot depends on Codex App's page structure and local data format. If Codex App changes its renderer structure, session database, or configuration format, CodexPilot may need updates to its page connection scripts or sync logic.
+CodexPilot depends on ChatGPT desktop or legacy Codex page structure and local Codex data format. If ChatGPT desktop changes its renderer structure, route metadata, request dispatcher, session database, or configuration format, CodexPilot may need updates to its page connection scripts or sync logic. The intended maintenance path is to keep the desktop host compatibility layer small, preserve legacy Codex behavior, and let page-specific enhancements degrade gracefully when a hook is unavailable.

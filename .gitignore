@@ -35,3 +35,9 @@ Thumbs.db
 AGENTS.md
 
 scripts/package-macos.sh
+
+# eo-project vault link
+eo-doc/vault
+
+# eo-doc sync cursor
+eo-doc/.sync-cursor

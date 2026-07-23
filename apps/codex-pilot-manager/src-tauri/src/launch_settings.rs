@@ -236,11 +236,9 @@ pub(crate) fn launch_options_from_preferences(
 }
 
 pub(crate) fn build_codex_command_preview(app_dir: &Path, debug_port: u16) -> Vec<String> {
-    if app_dir.extension().and_then(|value| value.to_str()) == Some("app") {
-        codex_pilot_core::launcher::build_macos_open_command(app_dir, debug_port)
-    } else {
-        codex_pilot_core::launcher::build_codex_command(app_dir, debug_port)
-    }
+    codex_pilot_core::app_paths::resolve_host_from_path(app_dir)
+        .map(|host| codex_pilot_core::launcher::build_host_command(&host, debug_port))
+        .unwrap_or_else(Vec::new)
 }
 
 pub(crate) fn append_tokio_launcher_args(

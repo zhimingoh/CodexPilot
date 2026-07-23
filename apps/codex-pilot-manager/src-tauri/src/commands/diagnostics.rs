@@ -87,7 +87,7 @@ pub(crate) async fn diagnostics_snapshot(
                 backend_check,
                 DiagnosticCheck {
                     name: "Codex 应用探测".to_string(),
-                    status: if codex_pilot_core::app_paths::resolve_codex_app_dir(None).is_some() {
+                    status: if codex_pilot_core::app_paths::resolve_codex_host(None).is_some() {
                         "ok"
                     } else {
                         "warning"
@@ -118,7 +118,7 @@ fn append_diagnostic_snapshot(state: &tauri::State<'_, ManagerState>) -> Result<
         .map_err(|_| "启动状态锁已损坏")?
         .clone();
     let options = launch_options_from_preferences(&prefs);
-    let app_dir = codex_pilot_core::app_paths::resolve_codex_app_dir(options.app_dir.as_deref());
+    let host = codex_pilot_core::app_paths::resolve_codex_host(options.app_dir.as_deref());
     let launcher = resolve_launcher_path();
     let status_path = codex_pilot_core::status::status_path();
     let config_path = codex_pilot_core::app_paths::codex_config_path();
@@ -137,7 +137,9 @@ fn append_diagnostic_snapshot(state: &tauri::State<'_, ManagerState>) -> Result<
         "diagnostics.launch",
         json!({
             "requested_app_path": prefs.app_path,
-            "resolved_app_path": app_dir.as_ref().map(|path| path.to_string_lossy().to_string()),
+            "resolved_app_path": host.as_ref().map(|host| host.app_dir.to_string_lossy().to_string()),
+            "host_kind": host.as_ref().map(|host| host.kind.label()),
+            "executable_path": host.as_ref().map(|host| host.executable.to_string_lossy().to_string()),
             "debug_port": options.debug_port,
             "helper_port": options.helper_port,
             "helper_port_connectable": codex_pilot_core::ports::can_connect_loopback_port(options.helper_port),

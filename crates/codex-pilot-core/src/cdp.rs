@@ -43,28 +43,37 @@ pub async fn list_targets(debug_port: u16) -> anyhow::Result<Vec<CdpTarget>> {
 }
 
 pub fn pick_page_target(targets: &[CdpTarget]) -> anyhow::Result<CdpTarget> {
-    let pages = targets.iter().filter(|target| {
-        target.target_type == "page"
-            && target
-                .web_socket_debugger_url
-                .as_deref()
-                .is_some_and(|url| !url.is_empty())
-    });
+    targets
+        .iter()
+        .filter(|target| {
+            target.target_type == "page"
+                && target
+                    .web_socket_debugger_url
+                    .as_deref()
+                    .is_some_and(|url| !url.is_empty())
+        })
+        .filter_map(|target| target_score(target).map(|score| (score, target)))
+        .max_by_key(|(score, _)| *score)
+        .map(|(_, target)| target.clone())
+        .ok_or_else(|| anyhow::anyhow!("No injectable Codex or ChatGPT page target found"))
+}
 
-    let mut first_page = None;
-    for target in pages {
-        first_page.get_or_insert(target);
-        let haystack = format!("{} {}", target.title, target.url).to_lowercase();
-        if haystack.contains("codex") {
-            return Ok(target.clone());
-        }
+fn target_score(target: &CdpTarget) -> Option<u8> {
+    let title = target.title.to_lowercase();
+    let url = target.url.to_lowercase();
+    let haystack = format!("{title} {url}");
+    let is_chatgpt = url.contains("chatgpt.com") || title.contains("chatgpt");
+    let is_codex = haystack.contains("codex");
+
+    if is_chatgpt && (url.contains("/codex") || is_codex) {
+        Some(100)
+    } else if is_codex {
+        Some(80)
+    } else if is_chatgpt {
+        Some(60)
+    } else {
+        None
     }
-
-    if let Some(target) = first_page {
-        return Ok(target.clone());
-    }
-
-    bail!("No injectable Codex page target found")
 }
 
 pub async fn evaluate_script(websocket_url: &str, script: &str) -> anyhow::Result<Value> {
@@ -148,4 +157,55 @@ pub async fn selected_page_websocket_url(debug_port: u16) -> anyhow::Result<Stri
     target
         .web_socket_debugger_url
         .ok_or_else(|| anyhow::anyhow!("selected CDP target has no websocket URL"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn target(id: &str, title: &str, url: &str) -> CdpTarget {
+        CdpTarget {
+            id: id.to_string(),
+            target_type: "page".to_string(),
+            title: title.to_string(),
+            url: url.to_string(),
+            web_socket_debugger_url: Some(format!("ws://127.0.0.1/{id}")),
+        }
+    }
+
+    #[test]
+    fn pick_page_target_prefers_chatgpt_page_over_unrelated_first_page() {
+        let targets = vec![
+            target("first", "Localhost", "http://localhost:1420"),
+            target("chatgpt", "ChatGPT", "https://chatgpt.com/"),
+        ];
+
+        let selected = pick_page_target(&targets).unwrap();
+
+        assert_eq!(selected.id, "chatgpt");
+    }
+
+    #[test]
+    fn pick_page_target_prefers_codex_route_inside_chatgpt() {
+        let targets = vec![
+            target("chat", "ChatGPT", "https://chatgpt.com/"),
+            target("codex", "ChatGPT", "https://chatgpt.com/codex"),
+        ];
+
+        let selected = pick_page_target(&targets).unwrap();
+
+        assert_eq!(selected.id, "codex");
+    }
+
+    #[test]
+    fn pick_page_target_rejects_unrelated_pages() {
+        let targets = vec![
+            target("manager", "Pilot Manager", "http://localhost:1420"),
+            target("docs", "Rust Docs", "https://doc.rust-lang.org/"),
+        ];
+
+        let error = pick_page_target(&targets).unwrap_err().to_string();
+
+        assert!(error.contains("No injectable Codex or ChatGPT page target"));
+    }
 }

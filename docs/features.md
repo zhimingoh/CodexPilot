@@ -14,9 +14,9 @@
 
 ## 启动与注入
 
-CodexPilot 使用本地 launcher 启动 Codex，并通过 Chromium DevTools Protocol 连接页面。注入成功后，Codex 页面会出现 CodexPilot 操作菜单。
+CodexPilot 使用本地 launcher 启动受支持的桌面宿主，并通过 Chromium DevTools Protocol 连接页面。当前支持 ChatGPT 桌面版里的 Codex 工作流，同时保留旧版独立 Codex 宿主兼容。注入成功后，页面会出现 CodexPilot 操作菜单。
 
-如果 Codex 已经由其他方式启动，管理器会根据当前状态提示重新注入或重启。重启 Codex 前会要求确认，避免未保存输入意外丢失。
+如果 ChatGPT 或旧版 Codex 已经由其他方式启动，管理器会根据当前状态提示重新注入或重启。重启桌面宿主前会要求确认，避免未保存输入意外丢失。
 
 启动页还提供一组“页面增强”开关，用来控制注入到 Codex 页面的可见能力：
 
@@ -51,6 +51,12 @@ CodexPilot 可以在普通会话和归档会话中提供额外操作：
 ![CodexPilot 对话维护页面](images/readme-dialog-maintenance.png)
 
 ## Timeline
+
+### ChatGPT 桌面版宿主兼容
+
+CodexPilot 的启动与注入现在按“桌面宿主”处理：优先支持 ChatGPT 桌面版里的 Codex 工作流，同时保留旧版独立 Codex 应用路径。诊断信息会记录宿主类型、应用目录、可执行文件路径、调试端口和 helper 端口状态，便于维护者定位发现、启动或注入失败。
+
+页面增强能力仍然依赖宿主内部页面结构。新版 ChatGPT 桌面版如果缺少某个内部模块或 dispatcher，相关增强应降级为不可用并记录诊断事件，基础桥接、菜单和可用功能不应被这个失败拖垮。
 
 在当前 Codex 对话中，如果检测到至少两个用户提问，CodexPilot 会在页面右侧显示一条轻量 Timeline。每个圆点代表一个用户提问，悬停可以查看问题摘要，点击会把对应提问滚动到屏幕中间。
 

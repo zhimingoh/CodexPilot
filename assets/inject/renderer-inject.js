@@ -61,6 +61,7 @@
   let fastDispatcherPatchInstalled = false;
   let fastDispatcherPatchPromise = null;
   let fastDispatcherPatchStatus = "loading";
+  const fastUnavailableEventsReported = new Set();
   let routeTrackingInstalled = false;
   const backendStatusTimeoutMs = 2000;
   const backendRecoveryThreshold = 3;
@@ -92,7 +93,11 @@
           return await window.__CODEX_PILOT_TEST_LOAD_CODEX_APP_MODULE__(namePart);
         }
         const url = codexAppAssetUrl(namePart);
-        if (!url) throw new Error(`未找到 Codex App asset: ${namePart}`);
+        if (!url) {
+          const error = new Error(`Desktop host asset unavailable: ${namePart}`);
+          error.code = "asset_unavailable";
+          throw error;
+        }
         return await import(url);
       }).catch((error) => {
         if (fastModuleLoadPromise === promise) {
@@ -168,6 +173,25 @@
     } catch (_error) {
       // Diagnostic reporting must never break the Codex page.
     }
+  }
+
+  function reportFastUnavailable(reason, detail = {}) {
+    fastDispatcherPatchInstalled = false;
+    fastDispatcherPatchStatus = "unavailable";
+    window.__codexPilotFastDispatcherPatchUnavailable = {
+      reason,
+      detail,
+      at: Date.now()
+    };
+    const key = `${reason}:${String(detail.message || detail.asset || "")}`;
+    if (!fastUnavailableEventsReported.has(key)) {
+      fastUnavailableEventsReported.add(key);
+      reportRendererEvent("thread_fast_dispatcher_patch_unavailable", {
+        reason,
+        ...detail
+      });
+    }
+    refreshFastToggleUi();
   }
 
   function normalizeEnhancementSettings(value) {
@@ -1048,7 +1072,7 @@
       } else {
         fastToggleButton.removeAttribute("aria-disabled");
       }
-      const label = disabled ? "Fast 暂不可用，正在连接 Codex 请求通道" : currentServiceTierTooltip(state);
+      const label = disabled ? "Fast 暂不可用，正在连接桌面宿主请求通道" : currentServiceTierTooltip(state);
       fastToggleButton.title = label;
       fastToggleButton.setAttribute("aria-label", label);
     }
@@ -1059,7 +1083,7 @@
 
   function toggleCurrentServiceTierMode() {
     if (fastDispatcherPatchStatus !== "ready") {
-      showToast("Fast 暂不可用，正在连接 Codex 请求通道", null);
+      showToast("Fast 暂不可用，正在连接桌面宿主请求通道", null);
       reportRendererEvent("thread_fast_toggle_blocked", { patch_status: fastDispatcherPatchStatus });
       refreshFastToggleUi();
       return;
@@ -2160,7 +2184,12 @@
         const dispatcher = resolved?.dispatcher;
         if (!dispatcher) {
           const exportNames = Object.keys(module || {}).slice(0, 16).join(",");
-          throw new Error(`Codex dispatcher unavailable: no dispatcher export${exportNames ? ` (${exportNames})` : ""}`);
+          reportFastUnavailable("dispatcher_unavailable", {
+            export_names: exportNames,
+            message: "No compatible request dispatcher export was found"
+          });
+          fastDispatcherPatchPromise = null;
+          return;
         }
         const existingPatchActive = hasActiveServiceTierDispatcherPatch(dispatcher);
         const originalDispatch = existingPatchActive && typeof dispatcher.__codexPilotOriginalDispatchMessage === "function"
@@ -2218,10 +2247,11 @@
         refreshFastToggleUi();
         reportRendererEvent("thread_fast_dispatcher_patch_installed", { export_name: resolved.exportName || "" });
       } catch (error) {
-        fastDispatcherPatchStatus = "unavailable";
-        reportRendererEvent("thread_fast_dispatcher_patch_failed", { message: String(error) });
+        reportFastUnavailable(error?.code === "asset_unavailable" ? "asset_unavailable" : "patch_failed", {
+          asset: "vscode-api-",
+          message: String(error)
+        });
         fastDispatcherPatchPromise = null;
-        refreshFastToggleUi();
       }
     });
   }

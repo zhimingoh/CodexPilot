@@ -5,6 +5,7 @@ export type AutoLaunchInput = {
   alreadyFailed: boolean;
   launching: boolean;
   codexInstalled: boolean;
+  hostLabel?: string | null;
 };
 
 export type AutoLaunchDecision =
@@ -13,6 +14,7 @@ export type AutoLaunchDecision =
   | { kind: "run"; markAttempted: true; command: "launch_codex" | "reinject_codex"; progress: string; message: string };
 
 export function resolveAutoLaunchAction(input: AutoLaunchInput): AutoLaunchDecision {
+  const hostLabel = input.hostLabel || "desktop host";
   if (input.launching || input.alreadyAttempted || input.alreadyFailed || !input.autoLaunchOnOpen) {
     return { kind: "skip", markAttempted: false };
   }
@@ -21,17 +23,16 @@ export function resolveAutoLaunchAction(input: AutoLaunchInput): AutoLaunchDecis
     return {
       kind: "stop",
       markAttempted: true,
-      message: "未找到 Codex 安装或启动路径不可用，已跳过自动启动/注入",
+      message: `未找到 ${hostLabel} 安装或启动路径不可用，已跳过自动启动/注入`,
     };
   }
 
   if (input.actionKind === "launching") {
-    // 后端正在启动中，不要 markAttempted，等下一次 refresh 再判断
     return { kind: "skip", markAttempted: false };
   }
 
   if (input.actionKind === "launch") {
-    const progress = "正在自动启动 Codex";
+    const progress = `正在自动启动 ${hostLabel}`;
     return {
       kind: "run",
       markAttempted: true,
@@ -56,7 +57,7 @@ export function resolveAutoLaunchAction(input: AutoLaunchInput): AutoLaunchDecis
     return {
       kind: "stop",
       markAttempted: true,
-      message: "Codex 已运行但没有调试端口，需要手动确认重启并注入",
+      message: `${hostLabel} 已运行但没有调试端口，需要手动确认重启并注入`,
     };
   }
 

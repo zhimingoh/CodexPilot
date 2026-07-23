@@ -35,7 +35,7 @@ export function ProviderView({
   onProgress,
 }: {
   provider: ProviderSnapshot | null;
-  onRefresh: () => void;
+  onRefresh: () => Promise<unknown>;
   onMessage: (msg: string) => void;
   onProgress: (msg: string) => void;
 }) {
@@ -76,7 +76,7 @@ export function ProviderView({
     setError("");
     try {
       await fn();
-      onRefresh();
+      await onRefresh();
     } catch (e) {
       const msg = String(e);
       setError(msg);

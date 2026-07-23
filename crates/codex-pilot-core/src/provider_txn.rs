@@ -313,6 +313,57 @@ impl ProviderTxn {
         })
     }
 
+    /// Activates a profile and reapplies the live route when CodexPilot owns it.
+    ///
+    /// The updated profile store and the Codex config/auth files share one
+    /// transaction snapshot, so a failed route write restores all three files.
+    pub fn commit_profile_activation(
+        self,
+        profiles_json: &[u8],
+        current_mode: Option<ProviderMode>,
+        base_url: &str,
+        api_key: &str,
+        upstream_protocol: UpstreamProtocol,
+        helper_port: u16,
+    ) -> anyhow::Result<()> {
+        serde_json::from_slice::<serde_json::Value>(profiles_json)
+            .context("invalid provider-profiles.json for activation")?;
+
+        match current_mode {
+            Some(ProviderMode::Hybrid) => self.precheck_hybrid()?,
+            Some(ProviderMode::Api) => Self::precheck_api(base_url, api_key)?,
+            _ => {}
+        }
+
+        let apply_result = (|| {
+            std::fs::create_dir_all(&self.state_dir).with_context(|| {
+                format!(
+                    "failed to create provider state directory: {}",
+                    self.state_dir.display()
+                )
+            })?;
+            std::fs::write(self.profiles_path(), profiles_json)
+                .context("failed to write activated provider-profiles.json")?;
+
+            match current_mode {
+                Some(ProviderMode::Hybrid) => {
+                    self.apply_hybrid_inner(base_url, api_key, upstream_protocol, helper_port)
+                }
+                Some(ProviderMode::Api) => {
+                    self.apply_api_inner(base_url, api_key, upstream_protocol)
+                }
+                _ => Ok(()),
+            }
+        })();
+
+        if let Err(error) = apply_result {
+            let _ = self.rollback();
+            anyhow::bail!(error);
+        }
+
+        Ok(())
+    }
+
     fn apply_api_inner(
         &self,
         base_url: &str,
@@ -466,14 +517,9 @@ pub fn read_current_mode() -> anyhow::Result<ProviderModeReading> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
 
     fn test_guard() -> std::sync::MutexGuard<'static, ()> {
-        static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
-        GUARD
-            .get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        crate::app_paths::test_dirs_guard()
     }
 
     fn unique_temp_dir(name: &str) -> PathBuf {
@@ -617,6 +663,129 @@ mod tests {
 
     fn api_profile_json() -> &'static str {
         r#"{"activeProfileId":"p2","profiles":[{"id":"p2","name":"API","baseUrl":"https://api.example.com/v1","bearerToken":"sk-api","upstreamProtocol":"responses"}]}"#
+    }
+
+    fn activation_profiles_json(active_profile_id: &str) -> Vec<u8> {
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "activeProfileId": active_profile_id,
+            "profiles": [
+                {
+                    "id": "direct",
+                    "name": "Direct",
+                    "baseUrl": "https://direct.example.com/v1",
+                    "bearerToken": "sk-direct",
+                    "upstreamProtocol": "responses"
+                },
+                {
+                    "id": "proxy",
+                    "name": "Proxy",
+                    "baseUrl": "https://proxy.example.com/v1",
+                    "bearerToken": "sk-proxy",
+                    "upstreamProtocol": "chatCompletions"
+                }
+            ]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn profile_activation_reapplies_hybrid_route_across_protocol_modes() {
+        let _guard = test_guard();
+        let home = unique_temp_dir("activate-hybrid");
+        let state = unique_temp_dir("activate-hybrid-state");
+        let initial_profiles = activation_profiles_json("direct");
+        write_txn_test_files(
+            &home,
+            &state,
+            "model_provider = \"CodexPilot\"\ncodex_pilot_channel_mode = \"hybrid\"\n",
+            chatgpt_auth_json(),
+            std::str::from_utf8(&initial_profiles).unwrap(),
+        );
+        set_test_dirs(&home, &state);
+
+        let proxy_profiles = activation_profiles_json("proxy");
+        ProviderTxn::begin()
+            .unwrap()
+            .commit_profile_activation(
+                &proxy_profiles,
+                Some(ProviderMode::Hybrid),
+                "https://proxy.example.com/v1",
+                "sk-proxy",
+                UpstreamProtocol::ChatCompletions,
+                59999,
+            )
+            .unwrap();
+
+        let proxy_config = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        assert!(proxy_config.contains("base_url = \"http://127.0.0.1:59999/v1\""));
+        assert!(proxy_config.contains("codex_pilot_upstream_protocol = \"chat_completions\""));
+        let stored_profiles =
+            std::fs::read_to_string(state.join("provider-profiles.json")).unwrap();
+        assert!(stored_profiles.contains("\"activeProfileId\": \"proxy\""));
+
+        let direct_profiles = activation_profiles_json("direct");
+        ProviderTxn::begin()
+            .unwrap()
+            .commit_profile_activation(
+                &direct_profiles,
+                Some(ProviderMode::Hybrid),
+                "https://direct.example.com/v1",
+                "sk-direct",
+                UpstreamProtocol::Responses,
+                59999,
+            )
+            .unwrap();
+
+        let direct_config = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        assert!(direct_config.contains("base_url = \"https://direct.example.com/v1\""));
+        assert!(direct_config.contains("codex_pilot_upstream_protocol = \"responses\""));
+        let stored_profiles =
+            std::fs::read_to_string(state.join("provider-profiles.json")).unwrap();
+        assert!(stored_profiles.contains("\"activeProfileId\": \"direct\""));
+
+        clear_test_dirs();
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn profile_activation_reapplies_api_url_and_key() {
+        let _guard = test_guard();
+        let home = unique_temp_dir("activate-api");
+        let state = unique_temp_dir("activate-api-state");
+        let initial_profiles = activation_profiles_json("direct");
+        write_txn_test_files(
+            &home,
+            &state,
+            "model_provider = \"CodexPilot\"\ncodex_pilot_channel_mode = \"api\"\n",
+            r#"{"OPENAI_API_KEY":"sk-old"}"#,
+            std::str::from_utf8(&initial_profiles).unwrap(),
+        );
+        set_test_dirs(&home, &state);
+
+        let updated_profiles = activation_profiles_json("direct");
+        ProviderTxn::begin()
+            .unwrap()
+            .commit_profile_activation(
+                &updated_profiles,
+                Some(ProviderMode::Api),
+                "https://direct.example.com/v1",
+                "sk-direct",
+                UpstreamProtocol::Responses,
+                59999,
+            )
+            .unwrap();
+
+        let config = std::fs::read_to_string(home.join("config.toml")).unwrap();
+        assert!(config.contains("base_url = \"https://direct.example.com/v1\""));
+        assert!(config.contains("codex_pilot_channel_mode = \"api\""));
+        let auth = std::fs::read_to_string(home.join("auth.json")).unwrap();
+        assert!(auth.contains("sk-direct"));
+        assert!(!auth.contains("sk-old"));
+
+        clear_test_dirs();
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&state);
     }
 
     #[test]

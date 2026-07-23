@@ -50,11 +50,11 @@ pub(crate) async fn launch_snapshot(
 ) -> Result<LaunchSnapshot, String> {
     let prefs = load_launch_preferences();
     let options = launch_options_from_preferences(&prefs);
-    let app_dir = codex_pilot_core::app_paths::resolve_codex_app_dir(options.app_dir.as_deref());
-    let codex_installed = app_dir.is_some();
-    let command_preview = app_dir
-        .as_deref()
-        .map(|path| build_codex_command_preview(path, options.debug_port))
+    let host = codex_pilot_core::app_paths::resolve_codex_host(options.app_dir.as_deref());
+    let codex_installed = host.is_some();
+    let command_preview = host
+        .as_ref()
+        .map(|host| codex_pilot_core::launcher::build_host_command(host, options.debug_port))
         .unwrap_or_else(Vec::new);
 
     let helper_reachable = codex_pilot_core::ports::can_connect_loopback_port(options.helper_port);
@@ -87,7 +87,16 @@ pub(crate) async fn launch_snapshot(
     };
 
     Ok(LaunchSnapshot {
-        app_path: app_dir.map(|path| path.to_string_lossy().to_string()),
+        app_path: host
+            .as_ref()
+            .map(|host| host.app_dir.to_string_lossy().to_string()),
+        host_kind: host.as_ref().map(|host| host.kind.label().to_string()),
+        host_label: host
+            .as_ref()
+            .map(|host| host.kind.display_name().to_string()),
+        executable_path: host
+            .as_ref()
+            .map(|host| host.executable.to_string_lossy().to_string()),
         requested_app_path: prefs.app_path,
         debug_port: options.debug_port,
         helper_port: options.helper_port,

@@ -200,7 +200,7 @@ pub(crate) fn launch_action_label(
         "running" => "已运行".to_string(),
         "reinject" => "重新注入".to_string(),
         "restart" => "重启并注入".to_string(),
-        "launch" => "启动 Codex".to_string(),
+        "launch" => "启动桌面宿主".to_string(),
         _ => "不可启动".to_string(),
     }
 }
@@ -214,38 +214,40 @@ pub(crate) fn launch_action_detail(
 ) -> String {
     match launch_action_kind(ready, manager_running, codex_running, options, launch_state).as_str()
     {
-        "launching" => "CodexPilot 正在启动 Codex，请稍候。".to_string(),
+        "launching" => "CodexPilot 正在启动桌面宿主，请稍候。".to_string(),
         "running" => "CodexPilot 已连接，无需重复启动。".to_string(),
-        "reinject" => "检测到 Codex 调试端口，可以直接重新注入。".to_string(),
-        "restart" => "检测到 Codex 已运行，但没有调试端口；需要确认后重启。".to_string(),
-        "launch" => "未检测到运行中的 Codex，可以从 CodexPilot 启动并注入。".to_string(),
-        _ => "需要检查 Codex 应用路径或启动偏好。".to_string(),
+        "reinject" => "检测到调试端口，可以直接重新注入。".to_string(),
+        "restart" => "检测到桌面宿主已运行，但没有调试端口；需要确认后重启。".to_string(),
+        "launch" => "未检测到运行中的桌面宿主，可以从 CodexPilot 启动并注入。".to_string(),
+        _ => "需要检查桌面宿主路径或启动偏好。".to_string(),
     }
 }
 
 pub(crate) fn request_codex_quit() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        let mut command = codex_pilot_core::windows_integration::std_command("osascript");
-        command
-            .args(["-e", r#"tell application "Codex" to quit"#])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        let status = codex_pilot_core::windows_integration::status_hidden(&mut command)
-            .map_err(|error| format!("请求关闭 Codex 失败：{error}"))?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err("请求关闭 Codex 失败，请手动关闭后再启动。".to_string())
+        for app_name in ["ChatGPT", "Codex"] {
+            let mut command = codex_pilot_core::windows_integration::std_command("osascript");
+            command
+                .args(["-e", &format!(r#"tell application "{app_name}" to quit"#)])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            if codex_pilot_core::windows_integration::status_hidden(&mut command)
+                .map(|status| status.success())
+                .unwrap_or(false)
+            {
+                return Ok(());
+            }
         }
+        Err("请求关闭桌面宿主失败，请手动关闭后再启动。".to_string())
     }
     #[cfg(target_os = "windows")]
     {
-        Err("Windows 暂不支持自动请求关闭 Codex，请手动关闭后再启动。".to_string())
+        Err("Windows 暂不支持自动请求关闭桌面宿主，请手动关闭后再启动。".to_string())
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        Err("当前平台暂不支持自动请求关闭 Codex，请手动关闭后再启动。".to_string())
+        Err("当前平台暂不支持自动请求关闭桌面宿主，请手动关闭后再启动。".to_string())
     }
 }
 

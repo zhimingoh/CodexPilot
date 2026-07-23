@@ -65,6 +65,7 @@ function App() {
   const autoLaunchAttemptedRef = React.useRef(false);
   const autoLaunchFailedRef = React.useRef(false);
   const launchRequestIdRef = React.useRef(0);
+  const providerRefreshIdRef = React.useRef(0);
 
   const notify = React.useCallback((value: string) => {
     setMessage(value);
@@ -88,11 +89,12 @@ function App() {
   }, [theme]);
 
   const refresh = React.useCallback((silent = false) => {
+    const providerRefreshId = ++providerRefreshIdRef.current;
     if (!silent) {
       notify("正在刷新");
       setDialogSyncRefreshVersion((current) => current + 1);
     }
-    Promise.all([
+    return Promise.all([
       callBackend<BackendStatus | null>("backend_status")
         .then(setStatus)
         .catch(() => setStatus(null)),
@@ -106,8 +108,16 @@ function App() {
         .then(setDiagnostics)
         .catch(() => setDiagnostics(null)),
       callBackend<ProviderSnapshot>("provider_snapshot")
-        .then(setProvider)
-        .catch(() => setProvider(null)),
+        .then((snapshot) => {
+          if (providerRefreshId === providerRefreshIdRef.current) {
+            setProvider(snapshot);
+          }
+        })
+        .catch(() => {
+          if (providerRefreshId === providerRefreshIdRef.current) {
+            setProvider(null);
+          }
+        }),
     ]).finally(() => {
       if (!silent) notify("已更新");
     });
@@ -282,6 +292,7 @@ function App() {
       alreadyFailed: autoLaunchFailedRef.current,
       launching,
       codexInstalled: launch.codexInstalled,
+      hostLabel: launch.hostLabel,
     });
     if (action.kind === "skip") return;
     if (action.markAttempted) {
@@ -315,9 +326,8 @@ function App() {
 
   React.useEffect(() => {
     if (!launching || !launch || !progressMessage) return;
-    const startingCodex =
-      progressMessage.includes("启动 Codex") || progressMessage.includes("启动中");
-    if (!startingCodex) return;
+    const startingHost = progressMessage.includes("启动") || progressMessage.includes("启动中");
+    if (!startingHost) return;
     if (launch.actionKind !== "reinject" && launch.actionKind !== "running") return;
 
     launchRequestIdRef.current += 1;
@@ -326,13 +336,14 @@ function App() {
     notify(
       launch.actionKind === "running"
         ? "CodexPilot 已连接。"
-        : "Codex 已启动，但 CodexPilot 还没接上；现在可以直接重新注入。"
+        : `${launch.hostLabel || "Desktop host"} 已启动，但 CodexPilot 还没接上；现在可以直接重新注入。`
     );
   }, [launch, launching, progressMessage, notify]);
 
   const handleLaunch = () => {
     if (launching) return;
     const actionKind = launch?.actionKind ?? "launch";
+    const hostLabel = launch?.hostLabel || "desktop host";
     if (actionKind === "unavailable") {
       notify("需要检查 Codex 应用路径或启动偏好");
       return;
@@ -340,7 +351,7 @@ function App() {
     if (actionKind === "restart") {
       if (!restartConfirming) {
         setRestartConfirming(true);
-        notify("当前 Codex 非 CodexPilot 启动，再次点击按钮以确认重启注入（未保存输入可能丢失）");
+        notify(`当前 ${hostLabel} 非 CodexPilot 启动，再次点击按钮以确认重启注入（未保存输入可能丢失）`);
         return;
       }
       setRestartConfirming(false);
@@ -355,8 +366,8 @@ function App() {
       actionKind === "reinject"
         ? "正在重新注入 CodexPilot"
         : actionKind === "restart"
-          ? "正在重启 Codex"
-          : "正在启动 Codex";
+          ? `正在重启 ${hostLabel}`
+          : `正在启动 ${hostLabel}`;
     const requestId = ++launchRequestIdRef.current;
     setLaunching(true);
     setProgressMessage(progress);
@@ -443,7 +454,7 @@ function App() {
                   ? "已连接"
                   : launch?.actionKind === "restart" && restartConfirming
                     ? "再次点击确认"
-                    : launch?.actionLabel ?? "启动 Codex"}
+                    : launch?.actionLabel ?? "启动"}
             </button>
           </div>
         </header>

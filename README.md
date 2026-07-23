@@ -23,7 +23,7 @@
   <a href="Cargo.toml"><img alt="Rust workspace" src="https://img.shields.io/badge/Rust-workspace-b7410e" /></a>
 </p>
 
-CodexPilot 适合已经在本机使用 Codex App 的用户。它提供一个本地管理界面，用 Chromium DevTools Protocol 连接正在运行的 Codex 页面。你可以从这里启动 Codex、解锁插件入口、导出会话、处理回收站、执行对话同步和查看诊断日志；它不修改 Codex App 安装目录，也不替换 Codex 本身。
+CodexPilot 适合已经在本机使用 Codex 工作流的用户。它提供一个本地管理界面，用 Chromium DevTools Protocol 连接受支持的桌面宿主页面。当前维护方向是支持 ChatGPT 桌面版里的 Codex 工作流，同时保留旧版独立 Codex 宿主兼容；你可以从这里启动桌面宿主、解锁可用的页面增强、导出会话、处理回收站、执行对话同步和查看诊断日志；它不修改宿主应用安装目录，也不替换宿主应用本身。
 
 > CodexPilot 是非官方工具，不隶属于 OpenAI 或 Codex App。
 
@@ -100,6 +100,12 @@ CodexPilot 会读取本机 `~/.codex/config.toml` 的当前 Provider，并读写
 
 
 本项目链接并认可 [LINUX DO](https://linux.do/) 社区。欢迎在社区讨论帖中反馈问题、分享使用体验或提出改进建议。
+
+## ChatGPT 桌面版兼容说明
+
+CodexPilot 现在的维护方向是支持 ChatGPT 桌面版里的 Codex 工作流，同时继续保留旧版独立 Codex 宿主兼容。启动页的路径可以留空走自动发现，也可以手动指定 `ChatGPT.exe`、`ChatGPT.app` 或旧版 Codex 应用路径。
+
+页面增强能力依赖宿主内部页面结构。新版 ChatGPT 桌面版如果不再暴露某个内部 hook，CodexPilot 应当保持桥接和基础菜单可用，并在诊断里记录该 hook 不可用，而不是让整个注入失败。
 
 ## License
 
